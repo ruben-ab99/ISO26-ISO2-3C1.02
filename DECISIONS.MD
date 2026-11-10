@@ -1,145 +1,233 @@
 # 🏛️ Registro de Decisiones de Arquitectura (DECISIONS.md)
 
-Este documento registra todas las decisiones arquitecturales, técnicas y de diseño tomadas durante el desarrollo del sistema del SESCAM, justificando su impacto en el Proceso Unificado de Desarrollo (PUD).
+Este documento registra de forma cronológica y trazable las Decisiones de Arquitectura de Software (ADR) adoptadas en el proyecto del **Sistema Integral de Gestión de Radiodiagnóstico e Imagen Médica (SESCAM)**.
 
 ---
 
-## 📌 ADR-001: Configuración de Arquitectura Multimódulo en Maven
+## 📌 ADR-001: Proyecto Maven multimódulo con POM padre, servidor y cliente
 
-* **Fecha:** 19/10/2026
-* **Estado:** Aprobado
+- **Fecha:** 19/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 1 · PR #3 · Issue #3
+- **Estado:** Aprobado
 
 ### 🎯 Contexto y Problema
-El enunciado del proyecto exige una arquitectura cliente-servidor para dar soporte a distintos tipos de clientes y gestión de un hospital. Además, se requiere un desarrollo desacoplado mediante el Proceso Unificado de Desarrollo (PUD), donde los componentes evolucionen de forma independiente.
+El enunciado exige una arquitectura cliente-servidor con posibilidad de soportar distintos tipos de clientes y componentes backend que puedan evolucionar de forma independiente.
 
 ### 💡 Decisión Tomada
-Se acuerda estructurar el proyecto mediante un **esquema multimódulo en Maven** compuesto por:
-1. **Proyecto Padre (POM raíz):** Centraliza la gestión de versiones, plugins y dependencias globales del proyecto.
-2. **Módulo Servidor (`servidor` / backend):** Contiene la lógica de negocio, controladores, modelos de dominio e integración con los servicios centrales del SESCAM.
-3. **Módulo Cliente (`cliente` / frontend):** Contiene la interfaz gráfica y cliente de la aplicación.
+Crear una estructura Maven multimódulo con un POM padre (`radiodiagnostico`) que centraliza las versiones y dependencias, y dos submódulos principales: `servidor` (lógica de negocio e integración SESCAM) y `cliente` (interfaz de usuario).
 
-### 🚀 Consecuencias e Impacto
-* **Ventajas:**
-  * Minimiza el acoplamiento entre la capa de presentación y la lógica de negocio (cumpliendo con el modelo MVC y la programación orientada a interfaces).
-  * Simplifica la compilación, empaquetado y gestión de dependencias desde la raíz del proyecto.
-  * Permite que la IA implemente los contratos de forma aislada en cada módulo sin romper el resto de la aplicación.
-* **Inconvenientes / Retos:**
-  * Requiere un control estricto de la estructura de paquetes y del ciclo de vida de Maven por parte de los expertos designados.
+### 🔄 Alternativas Valoradas
+1. Tener repositorios independientes para cliente y servidor.
+2. Un único módulo monolítico Maven.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Permite construir y verificar todo el proyecto con un único comando (`mvn clean verify`) asegurando coherencia en las versiones.
+- **Consecuencias:** Desacoplamiento entre capa de presentación y backend, control estricto del ciclo de vida de Maven y necesidad de mantener alineado el POM padre.
 
 ---
 
-## 📌 ADR-002: Catálogo de 24 casos de uso funcionales (21 del enunciado + 3 transversales)
+## 📌 ADR-002: Módulo de contratos e interfaces desacopladas
 
-* **Fecha:** 19/10/2026 · **Iteración:** It0
-* **Origen:** issue [#4](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/issues/4) · wiki [Requisitos y casos de uso](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/Requisitos-y-casos-de-uso)
-* **Estado:** Aprobado
+- **Fecha:** 25/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 2 · Plan de Configuración (1.4) · Issue #3
+- **Estado:** Aprobado
 
 ### 🎯 Contexto y Problema
-El enunciado enumera 21 funcionalidades agrupadas por tipo de usuario. Hay necesidades que no aparecen como viñeta pero que el sistema exige: identificar al usuario, visualizar imágenes DICOM desde la web y consultar el catálogo de tipos de prueba.
+El caso de uso de calidad CU-29 exige modularidad y mantenibilidad, garantizando que los módulos no dependan directamente de las implementaciones concretas de otros módulos.
 
 ### 💡 Decisión Tomada
-* Cada viñeta del enunciado es un requisito funcional y un caso de uso (1 RF : 1 CU): CU-01 a CU-21.
-* Se añaden tres casos de uso transversales: **CU-22 Autenticarse (SSO)**, requisito previo de todos los demás; **CU-23 Visualizar imágenes DICOM**, que extiende CU-09 (el enunciado pide visores compatibles con DICOM); y **CU-24 Consultar catálogo de pruebas**, base de CU-06 y mantenido por el administrador (CU-17).
+Aplicar el principio de *diseño por contrato*. Las interfaces Java y DTOs compartidos se definen primero (diseño por el desarrollador humano), y las clases concretas implementan dichas interfaces (desarrolladas por programadores o asistidas por IA).
 
-### 🚀 Consecuencias e Impacto
-* 24 casos de uso funcionales con trazabilidad directa al enunciado.
-* CU-22 condiciona la seguridad de todo el sistema, por lo que se planifica en la primera iteración de Elaboración.
+### 🔄 Alternativas Valoradas
+1. Invocación directa entre clases concretas de distintas capas.
+2. Definición de contratos en tiempo de compilación dentro del propio módulo ejecutor.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Cumple el principio de inversión de dependencias de SOLID e impide que cambios en la implementación rompan otros módulos.
+- **Consecuencias:** Facilidad para aplicar stubs/mocks en pruebas unitarias e integración segura asistida por agentes de IA.
 
 ---
 
-## 📌 ADR-003: Requisitos de calidad como casos de uso transversales (CU-25 a CU-29, ISO 25010)
+## 📌 ADR-003: Mapeo 1 Requisito Funcional : 1 Caso de Uso (24 CUs funcionales)
 
-* **Fecha:** 02/11/2026 · **Iteración:** It0
-* **Origen:** [Acta 3](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/Acta-3) · issues [#14](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/issues/14), [#15](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/issues/15), [#16](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/issues/16) · wiki [Planes de Gestión](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/Planes-de-Gesti%C3%B3n) (apartado 2)
-* **Estado:** Aprobado
+- **Fecha:** 19/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 1 · Issue #4 · Wiki Requisitos y casos de uso
+- **Estado:** Aprobado
 
 ### 🎯 Contexto y Problema
-El enunciado pide derivar requisitos de calidad según ISO 25010 (*quality by design*) e incorporarlos al diseño, manteniendo la trazabilidad con la planificación.
+El catálogo del SESCAM enumera 21 funcionalidades por actor. Existen además necesidades transversales no explícitas como autenticación global, visualización DICOM y catálogo de pruebas.
 
 ### 💡 Decisión Tomada
-Se priorizan cinco características y cada una se formaliza como un caso de uso de calidad transversal, con un peso en el modelo de calidad: **CU-25 Seguridad (30 %)**, **CU-26 Fiabilidad (25 %)**, **CU-27 Compatibilidad (20 %)**, **CU-29 Mantenibilidad (15 %)** y **CU-28 Portabilidad (10 %)**. Adecuación funcional, eficiencia de desempeño y capacidad de uso se vigilan sin caso de uso propio.
+Asociar 1 Requisito Funcional a 1 Caso de Uso (CU-01 a CU-21) e incorporar 3 casos de uso transversales funcionales: **CU-22 Autenticarse (SSO)** (inclusión en todos los CU), **CU-23 Visualizar imágenes DICOM** (extensión de CU-09) y **CU-24 Consultar catálogo de pruebas** (inclusión en CU-06).
 
-### 🚀 Consecuencias e Impacto
-* Los casos de uso de calidad no tienen iteración propia: sus horas (31,5 h con IA) se suman a las iteraciones donde se trabajan (reparto en el PUD, apartado «Casos de uso de calidad»).
-* Cada característica tiene un criterio medible y un mecanismo de verificación definidos en el Plan de Calidad.
+### 🔄 Alternativas Valoradas
+1. Agrupar múltiples requisitos funcionales en un único caso de uso complejo.
+2. Considerar la autenticación como un mero detalle de implementación sin CU.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Mantiene la trazabilidad directa 1:1 entre los requisitos del enunciado y el diseño funcional.
+- **Consecuencias:** Se formalizan 24 casos de uso funcionales. CU-22 se prioriza en Elaboración (It1) al ser prerrequisito de seguridad.
 
 ---
 
-## 📌 ADR-004: Agrupar los casos de uso por módulo Maven (n CU : 1 iteración)
+## 📌 ADR-004: Agrupación de Casos de Uso por módulo Maven e iteración
 
-* **Fecha:** 31/10/2026 · **Iteración:** It0
-* **Origen:** issue [#10](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/issues/10) · wiki [PUD](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/PUD) (supuesto 4)
-* **Estado:** Aprobado
+- **Fecha:** 31/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 3 · Issue #10 · Wiki PUD (supuesto 4)
+- **Estado:** Aprobado
 
 ### 🎯 Contexto y Problema
-El enunciado sugiere 1 CU : 1 iteración, lo que daría 24 iteraciones de entre 4 y 11 horas, poco operativas con la dedicación del equipo.
+Ejecutar 24 iteraciones individuales (1 CU : 1 iteración) para casos de uso pequeños (de 4 a 11 horas) generaba una sobrecarga inasumible de gestión, reuniones y releases.
 
 ### 💡 Decisión Tomada
-Cada iteración agrupa los casos de uso de la misma prioridad que forman un módulo Maven cohesionado: 7 iteraciones de casos de uso (It1–It7), más It0 e ItN. Elaboración: It1 (CU-22, CU-18, CU-20) e It2 (CU-09, CU-23, CU-10). Construcción: It3 a It7.
+Agrupar los casos de uso que comparten dominio y prioridad dentro de una misma iteración que produce un módulo Maven cohesionado (7 iteraciones de construcción/elaboración, It1 a It7, más It0 e ItN).
 
-### 🚀 Consecuencias e Impacto
-* Módulos con máxima cohesión y mínimo acoplamiento, y releases con sentido funcional (v0.1.0 a v0.7.0).
-* La trazabilidad por caso de uso se mantiene en la tabla de horas del PUD.
+### 🔄 Alternativas Valoradas
+1. Realizar 24 iteraciones independientes de 1 CU cada una.
+2. Hacer solo 2 iteraciones gigantescas (una para backend y otra para frontend).
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Minimiza la sobrecarga de gestión sin perder la trazabilidad por caso de uso en la estimación de horas.
+- **Consecuencias:** Releases funcionales incrementales (v0.1.0 a v0.7.0) con alta cohesión y mínimo acoplamiento entre iteraciones.
 
 ---
 
-## 📌 ADR-005: Supuestos de planificación (equipo, dedicación, coste y reserva)
+## 📌 ADR-005: Supuestos de equipo polivalente y reparto del trabajo Humano / IA
 
-* **Fecha:** 31/10/2026 (actualizado el 06/11/2026) · **Iteración:** It0
-* **Origen:** issues [#10](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/issues/10) y [#17](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/issues/17) · wiki [PUD](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/PUD) (secciones 1 y 3)
-* **Estado:** Aprobado
+- **Fecha:** 31/10/2026 (Actualizado 06/11/2026)
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 3 · Issues #10 y #17 · Wiki PUD
+- **Estado:** Aprobado
 
 ### 🎯 Contexto y Problema
-Para calcular coste, agenda y fecha final hay que fijar los parámetros del equipo. El enunciado fija It0 = 1.000 € e ItN = 2.000 €, y una semana de 40 h para un consultor.
+El equipo consta de 6 integrantes con tarifa de 20 €/h. Se requiere planificar la dedicación y el apoyo de herramientas de IA manteniendo el control de calidad.
 
 ### 💡 Decisión Tomada
-* 6 personas polivalentes, sin especialidad fija, a **20 €/h**.
-* Dedicación de **10 h/semana por persona** (60 h/semana de equipo), como dedicación realista de estudiantes. Es una desviación consciente de las 40 h del enunciado.
-* Reserva de contingencia del **15 %** sobre las horas funcionales, para cubrir el sesgo de optimismo de la IA y las reuniones.
-* It0 e ItN con el coste fijo del enunciado, más las horas de los casos de uso de calidad que se hacen en ellas.
+Establecer un equipo polivalente donde **quien implementa un módulo nunca lo prueba**. Los desarrolladores humanos deciden, diseñan las interfaces y auditan; los agentes de IA ayudan a implementar y generar pruebas unitarias.
 
-### 🚀 Consecuencias e Impacto
-* Resultado: 393,5 h y 7.870 € con IA (491 h y 9.820 € sin IA), con fin del desarrollo previsto el 19/11/2026.
-* Si la dedicación real difiere, las fechas se desplazan (ver ADR-007).
+### 🔄 Alternativas Valoradas
+1. Especialización fija de roles (programador puro vs. tester puro).
+2. Generación y fusión directa de código por IA sin intervención ni revisión humana.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Cumple la normativa académica y optimiza los tiempos de desarrollo (-20% R/A/D, -55% implementación, -40% pruebas).
+- **Consecuencias:** Cobertura de pruebas obligatoria y control de calidad riguroso entre pares.
 
 ---
 
-## 📌 ADR-006: Herramientas y modelos de IA
+## 📌 ADR-006: Reserva de contingencia del 15% y licencias de IA a 0 €
 
-* **Fecha:** 31/10/2026 · **Iteración:** It0
-* **Origen:** wiki [PUD](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/PUD) (supuestos 7 y 9) · wiki [Planes de Gestión](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/Planes-de-Gesti%C3%B3n) (apartado 1.9)
-* **Estado:** Aprobado
+- **Fecha:** 31/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 3 · Wiki PUD (supuestos 8 y 9) · Planes de Gestión
+- **Estado:** Aprobado
 
 ### 🎯 Contexto y Problema
-El enunciado permite apoyarse en agentes de IA (AI4SE), pero exige que los humanos decidan, diseñen las interfaces y auditen, y que se consideren los costes de licencias.
+Es necesario estimar el presupuesto del proyecto corrigiendo el sesgo de optimismo de las herramientas de IA y contemplando los costes de licencias.
 
 ### 💡 Decisión Tomada
-* Se usan GitHub Copilot y Gemini con licencia de estudiante y Claude con plan gratuito: **coste de licencias 0 €**.
-* Los humanos deciden en requisitos, análisis y diseño; los agentes implementan y ejecutan pruebas. Estimación del efecto: −20 % en R, A y D; −55 % en implementación (revisión humana incluida); −40 % en pruebas.
-* Ningún agente aprueba ni fusiona: todo código generado pasa por pull request revisado por un humano distinto del autor.
+Añadir una reserva de contingencia del 15% en horas sobre el desarrollo funcional y emplear herramientas de IA con licencias educativas o gratuitas (Copilot, Gemini, Claude), fijando el coste de licencias en 0 €.
 
-### 🚀 Consecuencias e Impacto
-* El desarrollo funcional baja de 301,5 h a 184,45 h (hipótesis a recalibrar con horas reales).
-* Se anotará qué modelo genera cada módulo para contrastar la hipótesis del −55 %.
+### 🔄 Alternativas Valoradas
+1. Contratar licencias comerciales pagadas.
+2. No incluir margen de contingencia para imprevistos.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Evita desviaciones presupuestarias y absorbe el tiempo consumido en reuniones y correcciones de código.
+- **Consecuencias:** Presupuesto acotado estrictamente a horas/hombre (20 €/h).
 
 ---
 
-## 📌 ADR-007: Plan de recuperación por el retraso de la It0
+## 📌 ADR-007: Estrategia de ramificación Git Flow y gestión de configuración
 
-* **Fecha:** 08/11/2026 · **Iteración:** It0 → It1
-* **Origen:** wiki [PUD](https://github.com/ruben-ab99/ISO26-ISO2-3C1.02/wiki/PUD) (sección 6)
-* **Estado:** Propuesto, pendiente de ratificar en el Acta 4
+- **Fecha:** 19/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 1 · Plan de Configuración (1.5) · Issue #1
+- **Estado:** Aprobado
 
 ### 🎯 Contexto y Problema
-A 8/11 no hay código de ninguna iteración de construcción: la It0 se prolongó hasta noviembre y la reunión de arranque fue el 18/10. Quedan 340,5 h del plan, con la misma fecha final (15/12) que las prácticas de pruebas y mantenimiento.
+Un equipo de 6 personas trabajando sobre la misma base de código requiere reglas claras para evitar conflictos de integración y cambios no auditados.
 
 ### 💡 Decisión Tomada
-Subir la dedicación a **15 h/semana por persona** desde el 9/11: It1 el 11/11, It2 el 13/11 … It7 el 25/11 e ItN el 3/12. Punto de control el 22/11: si It1 a It4 no están cerradas, se reduce el alcance de It6 e It7.
+Adoptar el flujo **Git Flow**: ramas estables `main` y `develop`, y ramas temporales `feature/<issue>-<descripcion>`. Se prohiben los commits directos a `main` y `develop`. Se requiere Pull Request (PR) obligatorio con validación de CI y aprobación por revisión de un compañero.
 
-**Alternativas valoradas:** mantener 10 h/semana (fin hacia el 16/12, después de la entrega) o subir a 20 h/semana (fin hacia el 27/11, el doble de la dedicación planificada).
+### 🔄 Alternativas Valoradas
+1. Commit directo a la rama `main` (Trunk-Based Development sin revisión).
+2. Integración semanal por envío de parches.
 
-### 🚀 Consecuencias e Impacto
-* Quedan casi dos semanas para las prácticas de pruebas y mantenimiento.
-* Las horas reales se anotan en cada issue desde el 9/11 para recalibrar.
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Garantiza que el código en `develop` y `main` siempre compile y haya pasado pruebas.
+- **Consecuencias:** Trazabilidad total de cada cambio vinculado a un Issue de GitHub (`Closes #X`).
 
 ---
+
+## 📌 ADR-008: Requisitos no funcionales como casos de uso de calidad (ISO 25010)
+
+- **Fecha:** 02/11/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 3 · Issues #14, #15, #16 · Wiki Planes de Gestión
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+El modelo ISO 25010 exige incorporar la calidad (*Quality by Design*) desde la fase de análisis y diseño, manteniendo la trazabilidad con las iteraciones del PUD.
+
+### 💡 Decisión Tomada
+Formalizar 5 casos de uso de calidad transversales con pesos definidos: **CU-25 Seguridad (30%)**, **CU-26 Fiabilidad (25%)**, **CU-27 Compatibilidad (20%)**, **CU-29 Mantenibilidad (15%)** y **CU-28 Portabilidad (10%)**.
+
+### 🔄 Alternativas Valoradas
+1. Tratar los requisitos no funcionales como simples notas al pie de página.
+2. Dejar la verificación de calidad para la iteración final (ItN).
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Permite auditar la calidad de forma objetiva con métricas (cobertura $\ge 70\%$, 0 accesos no autorizados, stubs DICOM/HL7).
+- **Consecuencias:** Los CUs de calidad se evalúan continuamente durante las iteraciones de desarrollo.
+
+---
+
+## 📌 ADR-009: Auditoría humana obligatoria del código generado por IA ("Man in the Loop")
+
+- **Fecha:** 19/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 1 · Plan de Configuración (1.9) · Plan de Calidad
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+El uso de asistentes de IA corre el riesgo de introducir alucinaciones, código no optimizado, vulnerabilidades de seguridad o deuda técnica no detectada.
+
+### 💡 Decisión Tomada
+Establecer la norma estricta de que **la IA propone y el humano audita**. Ningún código, test o configuración generado por IA se integrará en la rama principal sin haber sido ejecutado localmente (`mvn clean verify`) e inspeccionado por el equipo.
+
+### 🔄 Alternativas Valoradas
+1. Aceptar las sugerencias de la IA sin verificación previa.
+2. Prohibir totalmente el uso de IA en la asignatura.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Asegura la calidad del producto final y el aprendizaje activo del alumnado.
+- **Consecuencias:** El proceso de revisión humana impone un límite de velocidad que evita la acumulación de deuda técnica.
+
+---
+
+## 📌 ADR-010: Stack tecnológico unificado y ejecutable (Java 21 LTS)
+
+- **Fecha:** 31/10/2026
+- **Iteración:** It0
+- **Origen / Trazabilidad:** Acta 2 · Enunciado de la asignatura · README.md
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+Evitar discrepancias entre entornos de desarrollo locales (Windows/Linux/Mac) y el entorno de integración continua (GitHub Actions).
+
+### 💡 Decisión Tomada
+Fijar **Java 21 LTS** como versión estándar del compilador y runtime en el POM padre y en los workflows de CI (`maven.yml`), utilizando Maven 3.x, JUnit 5 para pruebas unitarias y Visual Paradigm para el modelado UML/SysML.
+
+### 🔄 Alternativas Valoradas
+1. Utilizar versiones tempranas o no-LTS de Java (ej. Java 25).
+2. Permitir que cada miembro del equipo use una versión distinta de JDK.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Java 21 LTS garantiza estabilidad, compatibilidad a largo plazo y soporte completo en las GitHub Actions.
+- **Consecuencias:** Construcciones reproducibles y sin errores de versión entre desarrolladores.
