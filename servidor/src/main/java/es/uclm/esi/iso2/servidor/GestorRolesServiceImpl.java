@@ -1,4 +1,7 @@
-package es.uclm.esi.iso2.cliente.roles;
+package es.uclm.esi.iso2.servidor;
+
+import es.uclm.sescam.contratos.roles.IGestorRolesService;
+import es.uclm.sescam.contratos.roles.Rol;
 
 public class GestorRolesServiceImpl implements IGestorRolesService {
 
