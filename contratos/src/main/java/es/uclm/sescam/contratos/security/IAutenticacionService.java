@@ -1,4 +1,4 @@
-package es.uclm.esi.iso2.servidor;
+package es.uclm.sescam.contratos.security;
 
 public interface IAutenticacionService {
     boolean autenticar(String usuario, String password);

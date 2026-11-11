@@ -1,8 +1,7 @@
 package es.uclm.esi.iso2.servidor;
 import org.junit.jupiter.api.Test;
 
-import es.uclm.esi.iso2.servidor.AutenticacionServiceImpl;
-import es.uclm.esi.iso2.servidor.IAutenticacionService;
+import es.uclm.sescam.contratos.security.IAutenticacionService;
 
 import static org.junit.jupiter.api.Assertions.*;
 
