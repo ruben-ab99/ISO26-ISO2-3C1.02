@@ -1,4 +1,4 @@
-package es.uclm.esi.iso2.cliente.roles;
+package es.uclm.sescam.contratos.roles;
 
 public interface IGestorRolesService {
     
