@@ -1,4 +1,7 @@
 package es.uclm.esi.iso2.servidor;
+
+import es.uclm.sescam.contratos.security.IAutenticacionService;
+
 public class AutenticacionServiceImpl implements IAutenticacionService {
 
     @Override
