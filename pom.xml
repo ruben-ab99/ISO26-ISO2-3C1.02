@@ -5,17 +5,17 @@
 
     <groupId>es.uclm.esi.ISO2-3C1.02</groupId>
     <artifactId>radiodiagnostico</artifactId>
-    <version>0.3.0-SNAPSHOT</version>
+    <version>0.4.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <!-- Paso 4: URL y distributionManagement para juntar sitios -->
+    <!-- URL y distributionManagement adaptado a Windows/Linux dentro de target/staging -->
     <name>radiodiagnostico</name>
     <url>https://example.org/radiodiagnostico</url>
 
     <distributionManagement>
         <site>
             <id>local</id>
-            <url>file:///tmp/radiodiagnostico-sitio</url>
+            <url>file://${project.build.directory}/staging</url>
         </site>
     </distributionManagement>
 
@@ -28,6 +28,7 @@
     <properties>
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <argLine></argLine>
     </properties>
 
     <dependencyManagement>
@@ -40,13 +41,16 @@
         </dependencies>
     </dependencyManagement>
 
-    <!-- Paso 1 y Paso 2: Plugins de ejecución, sitio y cobertura (JaCoCo) -->
+    <!-- Plugins de ejecución, sitio y cobertura (JaCoCo enganchado a Surefire) -->
     <build>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.6</version>
+                <configuration>
+                    <argLine>${argLine}</argLine>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -56,7 +60,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.16</version>
+                <version>0.8.12</version>
                 <executions>
                     <execution>
                         <id>preparar</id>
@@ -66,12 +70,14 @@
                     </execution>
                     <execution>
                         <id>informe</id>
+                        <phase>test</phase>
                         <goals>
                             <goal>report</goal>
                         </goals>
                     </execution>
                     <execution>
                         <id>comprobar</id>
+                        <phase>verify</phase>
                         <goals>
                             <goal>check</goal>
                         </goals>
@@ -96,7 +102,7 @@
         </plugins>
     </build>
 
-    <!-- Paso 3: Integrar los informes HTML de Surefire y JaCoCo en mvn site -->
+    <!-- Informes HTML de Surefire y JaCoCo en mvn site -->
     <reporting>
         <plugins>
             <plugin>
@@ -112,6 +118,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
                 <reportSets>
                     <reportSet>
                         <reports>
