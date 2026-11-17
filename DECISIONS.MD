@@ -231,3 +231,64 @@ Fijar **Java 21 LTS** como versión estándar del compilador y runtime en el POM
 ### 🚀 Motivo y Consecuencias
 - **Motivo:** Java 21 LTS garantiza estabilidad, compatibilidad a largo plazo y soporte completo en las GitHub Actions.
 - **Consecuencias:** Construcciones reproducibles y sin errores de versión entre desarrolladores.
+
+
+---
+
+## 📌 ADR-011: Baja lógica (Soft Delete) para el ciclo de vida de pacientes (CU-12)
+
+- **Fecha:** 16/11/2026
+
+- **Iteración:** It3
+
+- **Origen / Trazabilidad:** Issue CU-12 · Wiki Casos de Uso · Plan de Calidad (CU-26)
+
+- **Estado:** Aprobado
+
+
+### 🎯 Contexto y Problema
+En el caso de uso CU-12 (Gestionar pacientes) es necesario permitir la baja de pacientes en el sistema, pero un paciente puede tener asociados estudios radiológicos (DICOM), citas o informes médicos previos que no deben quedar huérfanos.
+
+### 💡 Decisión Tomada
+Implementar una baja lógica (*Soft Delete*) mediante el atributo booleano `activo = false` y el registro obligatorio de un `motivoBaja` en `PacienteDTO`, impidiendo futuras modificaciones sobre fichas inactivas pero conservando sus datos en el repositorio.
+
+### 🔄 Alternativas Valoradas
+1. Borrado físico del registro (`remove` en memoria o base de datos).
+
+2. Permitir eliminar pacientes únicamente si no tienen historial previo, bloqueando la baja en caso contrario.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Garantiza la integridad referencial y la trazabilidad clínica exigidas por el atributo de fiabilidad (CU-26) sin perder el histórico radiológico del SESCAM.
+
+- **Consecuencias:** Se evita la pérdida accidental de datos clínicos y duplicados de DNI activos, a costa de tener que filtrar el estado `activo` en las operaciones de alta y modificación.
+
+
+---
+
+## 📌 ADR-012: Inyección de dependencias por constructor para aislamiento en pruebas unitarias
+
+- **Fecha:** 16/11/2026
+
+- **Iteración:** It3
+
+- **Origen / Trazabilidad:** Issue CU-12 · ADR-002 · Plan de Calidad (CU-29)
+
+- **Estado:** Aprobado
+
+
+### 🎯 Contexto y Problema
+Los servicios de negocio desarrollados a partir de la Iteración 3 (como `GestorPacientesServiceImpl`) dependen transversalmente del control de acceso y roles (`IGestorRolesService`) implementado en iteraciones anteriores.
+
+### 💡 Decisión Tomada
+Inyectar las interfaces de servicios colaboradores (`IGestorRolesService`) a través del constructor de la implementación en `servidor`, prohibiendo instanciaciones directas (`new`) acopladas a clases concretas.
+
+### 🔄 Alternativas Valoradas
+1. Instanciar directamente `new GestorRolesServiceImpl()` dentro del servicio de pacientes.
+
+2. Utilizar variables estáticas o patrones Singleton globales para acceder a la gestión de roles.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Refuerza el principio de inversión de dependencias (ADR-002) y facilita el aislamiento de componentes exigido en mantenibilidad (CU-29).
+
+- **Consecuencias:** Permite emplear *stubs* ligeros en JUnit 5 (`GestorPacientesServiceImplTest`) para alcanzar una cobertura $\ge 70\%$ sin depender de la configuración real de usuarios ni tokens SSO.
+
