@@ -3,6 +3,7 @@ package es.uclm.esi.iso2.servidor;
 import es.uclm.sescam.contratos.informes.EstudioImagenDTO;
 import es.uclm.sescam.contratos.informes.IInformesImagenesService;
 import es.uclm.sescam.contratos.informes.InformeDTO;
+import es.uclm.sescam.contratos.security.IAuditService;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -14,12 +15,18 @@ public class InformesImagenesServiceImpl implements IInformesImagenesService {
 
     private final Map<String, InformeDTO> repositorioInformes = new HashMap<>();
     private final ISistemaExternoRisPacs sistemaExterno;
+    private final IAuditService auditService;
 
     public InformesImagenesServiceImpl(ISistemaExternoRisPacs sistemaExterno) {
+        this(sistemaExterno, new AuditServiceImpl());
+    }
+
+    public InformesImagenesServiceImpl(ISistemaExternoRisPacs sistemaExterno, IAuditService auditService) {
         if (sistemaExterno == null) {
             throw new IllegalArgumentException("El conector RIS/PACS/HCE no puede ser nulo");
         }
         this.sistemaExterno = sistemaExterno;
+        this.auditService = auditService;
     }
 
     @Override
@@ -52,6 +59,7 @@ public class InformesImagenesServiceImpl implements IInformesImagenesService {
 
         repositorioInformes.put(nuevoId, informe);
         sistemaExterno.sincronizarInformeConHce(nuevoId, pacienteId, contenidoClinico);
+        registrarAuditoria(medicoId, "CREAR_INFORME:" + nuevoId, true);
         return informe;
     }
 
@@ -68,6 +76,7 @@ public class InformesImagenesServiceImpl implements IInformesImagenesService {
         if (informe == null) {
             throw new IllegalStateException("No existe ningún informe con ID: " + informeId);
         }
+        registrarAuditoria(usuarioId, "CONSULTAR_INFORME:" + informeId, true);
         return informe;
     }
 
@@ -77,5 +86,12 @@ public class InformesImagenesServiceImpl implements IInformesImagenesService {
             throw new IllegalArgumentException("El ID de paciente es obligatorio");
         }
         return sistemaExterno.obtenerEstudiosDesdePacs(pacienteId);
+    }
+
+    private void registrarAuditoria(String usuario, String accion, boolean exito) {
+        if (auditService != null) {
+            String actor = (usuario != null && !usuario.isBlank()) ? usuario.trim() : "SISTEMA";
+            auditService.registrarEvento(actor, accion, exito, "127.0.0.1");
+        }
     }
 }
