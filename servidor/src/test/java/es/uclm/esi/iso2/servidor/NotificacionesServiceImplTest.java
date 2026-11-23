@@ -19,6 +19,22 @@ class NotificacionesServiceImplTest {
     }
 
     @Test
+    @DisplayName("Usuario sin rol ADMISION ni MEDICO recibe SecurityException al enviar notificaciones")
+    void usuarioSinPermisoLanzaSecurityException() {
+        GestorRolesServiceImpl roles = new GestorRolesServiceImpl();
+        NotificacionesServiceImpl servicioPaciente = new NotificacionesServiceImpl(roles, "token-sso-pac01-PACIENTE-1234");
+        NotificacionesServiceImpl servicioSinToken = new NotificacionesServiceImpl(roles, "");
+
+        assertThrows(IllegalArgumentException.class, () -> new NotificacionesServiceImpl(null, "tok"));
+        assertThrows(SecurityException.class, () ->
+                servicioPaciente.enviarNotificacion("PAC-01", "CITA", "Aviso", "Detalle", "C-1"));
+        assertThrows(SecurityException.class, () ->
+                servicioSinToken.listarNotificacionesPaciente("PAC-01"));
+        assertThrows(SecurityException.class, () ->
+                servicioSinToken.marcarComoLeida("NOT-1", "PAC-01"));
+    }
+
+    @Test
     @DisplayName("Enviar notificaciones válidas de cita, preparación e informe las crea sin leer")
     void enviarNotificacionesValidas() {
         NotificacionDTO avisoCita = servicio.enviarNotificacion(
@@ -81,7 +97,6 @@ class NotificacionesServiceImplTest {
         NotificacionDTO leida = servicio.marcarComoLeida(creada.getId(), "PAC-01");
         assertTrue(leida.isLeida());
 
-        // Validaciones de errores y seguridad
         assertThrows(IllegalArgumentException.class, () -> servicio.marcarComoLeida(null, "PAC-01"));
         assertThrows(IllegalArgumentException.class, () -> servicio.marcarComoLeida(" ", "PAC-01"));
         assertThrows(IllegalArgumentException.class, () -> servicio.marcarComoLeida(creada.getId(), null));

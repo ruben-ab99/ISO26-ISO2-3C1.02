@@ -153,7 +153,7 @@ Añadir una reserva de contingencia del 15% en horas sobre el desarrollo funcion
 Un equipo de 6 personas trabajando sobre la misma base de código requiere reglas claras para evitar conflictos de integración y cambios no auditados.
 
 ### 💡 Decisión Tomada
-Adoptar el flujo **Git Flow**: ramas estables `main` y `develop`, y ramas temporales `feature/<issue>-<descripcion>`. Se prohiben los commits directos a `main` y `develop`. Se requiere Pull Request (PR) obligatorio con validación de CI y aprobación por revisión de un compañero.
+Adoptar el flujo **Git Flow**: ramas estables `main` y `develop`, y ramas temporales `<issue>-cu<xx>-<descripcion>-<modulo>-v<version>`. Se prohiben los commits directos a `main` y `develop`. Se requiere Pull Request (PR) obligatorio con validación de CI y aprobación por revisión de un compañero.
 
 ### 🔄 Alternativas Valoradas
 1. Commit directo a la rama `main` (Trunk-Based Development sin revisión).
@@ -183,7 +183,7 @@ Formalizar 5 casos de uso de calidad transversales con pesos definidos: **CU-25 
 2. Dejar la verificación de calidad para la iteración final (ItN).
 
 ### 🚀 Motivo y Consecuencias
-- **Motivo:** Permite auditar la calidad de forma objetiva con métricas (cobertura $\ge 70\%$, 0 accesos no autorizados, stubs DICOM/HL7).
+- **Motivo:** Permite auditar la calidad de forma objetiva con métricas (cobertura $\ge 75\%$, 0 accesos no autorizados, stubs DICOM/HL7).
 - **Consecuencias:** Los CUs de calidad se evalúan continuamente durante las iteraciones de desarrollo.
 
 ---
@@ -223,6 +223,7 @@ Evitar discrepancias entre entornos de desarrollo locales (Windows/Linux/Mac) y 
 
 ### 💡 Decisión Tomada
 Fijar **Java 21 LTS** como versión estándar del compilador y runtime en el POM padre y en los workflows de CI (`maven.yml`), utilizando Maven 3.x, JUnit 5 para pruebas unitarias y Visual Paradigm para el modelado UML/SysML.
+Integración de JaCoCo (0.8.12) y maven-site-plugin en el ciclo de construcción para la auditoría automática de una cobertura minima de 75%.
 
 ### 🔄 Alternativas Valoradas
 1. Utilizar versiones tempranas o no-LTS de Java (ej. Java 25).
@@ -292,3 +293,94 @@ Inyectar las interfaces de servicios colaboradores (`IGestorRolesService`) a tra
 
 - **Consecuencias:** Permite emplear *stubs* ligeros en JUnit 5 (`GestorPacientesServiceImplTest`) para alcanzar una cobertura $\ge 70\%$ sin depender de la configuración real de usuarios ni tokens SSO.
 
+---
+
+## 📌 ADR-013: Discretización de agendas médicas en tramos horarios con bloqueo lógico (CU-14)
+
+- **Fecha:** 17/11/2026
+- **Iteración:** It4
+- **Origen / Trazabilidad:** Issue #55 · CU-14 · Plan de Calidad (CU-26)
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+El caso de uso CU-14 requiere configurar la disponibilidad diaria de los médicos y permitir el bloqueo de franjas horarias por incidencias o sesiones clínicas sin perder la trazabilidad ni permitir reservas sobre agendas cerradas.
+
+### 💡 Decisión Tomada
+Modelar cada jornada en `AgendaDiariaDTO` como una lista ordenada de tramos discretos (`TramoHorarioDTO`) generados automáticamente según la duración configurada por hueco, aplicando bloqueo lógico (`disponible = false` con `motivoBloqueo`) y cierre de agenda (`abierta = false`) que impide futuras modificaciones.
+
+### 🔄 Alternativas Valoradas
+1. Almacenar únicamente la hora de inicio y fin de la jornada calculando huecos dinámicamente en cada consulta.
+2. Eliminar físicamente los tramos bloqueados de la lista de la agenda.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Simplifica la detección de solapamientos, conserva el motivo de auditoría de cada bloqueo y evita inconsistencias al asignar citas.
+- **Consecuencias:** La duración de los huecos queda fijada en la apertura de la agenda diaria y cualquier bloqueo requiere coincidir con un tramo disponible existente.
+
+---
+
+## 📌 ADR-014: Ordenación por prioridad clínica + FIFO e integración por interfaz en listas de espera (CU-15)
+
+- **Fecha:** 23/11/2026
+- **Iteración:** It4
+- **Origen / Trazabilidad:** Issue #58 · CU-15 · ADR-002 · ADR-012
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+En el CU-15 (Gestionar listas de espera y huecos) es necesario priorizar pacientes según urgencia médica y asignarles huecos libres en las agendas del CU-14 sin acoplar `GestorListasEsperaServiceImpl` a la implementación interna de agendas.
+
+### 💡 Decisión Tomada
+Definir el enumerado `PrioridadEspera` con pesos ordenables (`URGENTE(1)`, `PREFERENTE(2)`, `ORDINARIA(3)`), ordenar las consultas pendientes por nivel de prioridad y orden cronológico de registro (`fechaRegistro` - FIFO), e inyectar `IGestorAgendasService` por constructor para reservar y bloquear el hueco de forma atómica al atender la solicitud.
+
+### 🔄 Alternativas Valoradas
+1. Ordenación estrictamente cronológica (FIFO puro) sin niveles de prioridad clínica.
+2. Duplicar el estado de disponibilidad de las agendas dentro del servicio de listas de espera.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Garantiza equidad clínica dentro de cada nivel de urgencia y mantiene una única fuente de verdad sobre los huecos libres de agenda.
+- **Consecuencias:** La asignación de un hueco marca automáticamente la solicitud como `atendida = true`, impidiendo reasignaciones duplicadas.
+
+---
+
+## 📌 ADR-015: Automatización de métricas de cobertura de código con JaCoCo en Maven
+
+- **Fecha:** 17/11/2026
+- **Iteración:** It4
+- **Origen / Trazabilidad:** Issue #55 · ADR-008 · Plan de Calidad (CU-29)
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+El ADR-008 establece como criterio de calidad un umbral mínimo de cobertura de código ($\ge 75\%$) en las pruebas unitarias, pero ejecutar únicamente JUnit con Surefire no proporciona métricas verificables ni informes de cobertura por clase.
+
+### 💡 Decisión Tomada
+Configurar `jacoco-maven-plugin` (`0.8.12`) en el `pom.xml` padre enlazado al ciclo de vida de `maven-surefire-plugin` (`prepare-agent`, `report` en fase `test` y `check` en fase `verify`) junto con `maven-site-plugin` para generar informes HTML navegables.
+
+### 🔄 Alternativas Valoradas
+1. Revisar la cobertura manualmente solo desde el IDE local de cada desarrollador.
+2. Posponer la medición de cobertura hasta la iteración final de transición (ItN).
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Permite auditar objetivamente en cada Pull Request que los nuevos servicios superan el umbral de calidad exigido.
+- **Consecuencias:** Cualquier cambio en el POM padre obliga a mantener sincronizado `${argLine}` entre JaCoCo y Surefire.
+
+---
+
+## 📌 ADR-016: Generación periódica de citas y cancelación en cascada en seguimientos clínicos (CU-07)
+
+- **Fecha:** 23/11/2026
+- **Iteración:** It5
+- **Origen / Trazabilidad:** Issue #71 · CU-07 · ADR-002 · ADR-012
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+El caso de uso CU-07 (Prescribir prueba de seguimiento) requiere pautar controles periódicos (ej. nódulos, revisiones oncológicas o cribados) generando automáticamente la necesidad de nuevas citas (`CU-07 <<include>> CU-13`) sin acoplar el módulo `prescripciones` a la implementación interna de `citacion` ni dejar citas huérfanas si se anula el seguimiento.
+
+### 💡 Decisión Tomada
+Inyectar por constructor las interfaces `ICatalogoPruebasService` e `IGestionCitasService` en `PrescripcionSeguimientoServiceImpl`, calcular automáticamente las fechas de revisión (`fechaInicio + i * periodicidadDias`) programando cada cita a través del contrato de citación, almacenar sus identificadores en `PrescripcionSeguimientoDTO` y propagar la cancelación en cascada a las citas asociadas cuando se anula el seguimiento.
+
+### 🔄 Alternativas Valoradas
+1. Instanciar directamente `GestionCitasServiceImpl` dentro de `prescripciones` o duplicar el almacenamiento de citas.
+2. Registrar únicamente el seguimiento sin invocar el servicio de citación, dejando las citas sin programar.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Mantiene el desacoplamiento entre dominios exigido por CU-29 (ADR-002), permite probar el servicio de forma aislada con stubs/implementaciones en memoria (ADR-012) y garantiza consistencia clínica entre seguimientos y citas.
+- **Consecuencias:** La programación de un seguimiento valida previamente que la prueba exista y esté activa en el catálogo (CU-24) y requiere disponibilidad horaria para cada fecha calculada.

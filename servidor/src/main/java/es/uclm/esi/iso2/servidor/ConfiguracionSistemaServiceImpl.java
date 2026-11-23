@@ -1,8 +1,10 @@
 package es.uclm.esi.iso2.servidor;
 
+import es.uclm.sescam.contratos.catalogo.ICatalogoPruebasService;
 import es.uclm.sescam.contratos.catalogo.IConfiguracionSistemaService;
 import es.uclm.sescam.contratos.catalogo.ParametroSistemaDTO;
 import es.uclm.sescam.contratos.catalogo.TipoPruebaDTO;
+import es.uclm.sescam.contratos.security.IAuditService;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -18,18 +20,32 @@ public class ConfiguracionSistemaServiceImpl implements IConfiguracionSistemaSer
     );
 
     private final Map<String, ParametroSistemaDTO> parametros = new LinkedHashMap<>();
-    private final Map<String, TipoPruebaDTO> catalogoPruebas = new LinkedHashMap<>();
+    private final ICatalogoPruebasService catalogoService;
+    private final IAuditService auditService;
 
     public ConfiguracionSistemaServiceImpl() {
+        this(new CatalogoPruebasServiceImpl(), new AuditServiceImpl());
+    }
+
+    public ConfiguracionSistemaServiceImpl(ICatalogoPruebasService catalogoService) {
+        this(catalogoService, new AuditServiceImpl());
+    }
+
+    public ConfiguracionSistemaServiceImpl(ICatalogoPruebasService catalogoService, IAuditService auditService) {
+        if (catalogoService == null) {
+            throw new IllegalArgumentException("El servicio de catálogo de pruebas no puede ser nulo");
+        }
+        this.catalogoService = catalogoService;
+        this.auditService = auditService;
         cargarParametrosPorDefecto();
     }
 
     private void cargarParametrosPorDefecto() {
-        guardarParametro("HORARIO_APERTURA_SALAS", "08:00-21:00", "HORARIOS", "SYSTEM");
-        guardarParametro("SLA_PRIORIDAD_URGENTE_HORAS", "24", "PRIORIDADES", "SYSTEM");
-        guardarParametro("SLA_PRIORIDAD_PREFERENTE_DIAS", "7", "PRIORIDADES", "SYSTEM");
-        guardarParametro("ANTELACION_MINIMA_CANCELACION_HORAS", "24", "POLITICAS_CITACION", "SYSTEM");
-        guardarParametro("PROTOCOLO_CONTRASTE_YODADO", "Verificar creatinina < 1.5 mg/dL", "PROTOCOLOS", "SYSTEM");
+        parametros.put("HORARIO_APERTURA_SALAS", new ParametroSistemaDTO("HORARIO_APERTURA_SALAS", "08:00-21:00", "HORARIOS", "SYSTEM", LocalDateTime.now()));
+        parametros.put("SLA_PRIORIDAD_URGENTE_HORAS", new ParametroSistemaDTO("SLA_PRIORIDAD_URGENTE_HORAS", "24", "PRIORIDADES", "SYSTEM", LocalDateTime.now()));
+        parametros.put("SLA_PRIORIDAD_PREFERENTE_DIAS", new ParametroSistemaDTO("SLA_PRIORIDAD_PREFERENTE_DIAS", "7", "PRIORIDADES", "SYSTEM", LocalDateTime.now()));
+        parametros.put("ANTELACION_MINIMA_CANCELACION_HORAS", new ParametroSistemaDTO("ANTELACION_MINIMA_CANCELACION_HORAS", "24", "POLITICAS_CITACION", "SYSTEM", LocalDateTime.now()));
+        parametros.put("PROTOCOLO_CONTRASTE_YODADO", new ParametroSistemaDTO("PROTOCOLO_CONTRASTE_YODADO", "Verificar creatinina < 1.5 mg/dL", "PROTOCOLOS", "SYSTEM", LocalDateTime.now()));
     }
 
     @Override
@@ -61,6 +77,7 @@ public class ConfiguracionSistemaServiceImpl implements IConfiguracionSistemaSer
                 LocalDateTime.now()
         );
         parametros.put(claveNormalizada, dto);
+        registrarAuditoria(adminId, "GUARDAR_PARAMETRO:" + claveNormalizada, true);
         return dto;
     }
 
@@ -115,7 +132,15 @@ public class ConfiguracionSistemaServiceImpl implements IConfiguracionSistemaSer
 
         String codigoNormalizado = tipoPrueba.getCodigoPrueba().trim().toUpperCase();
         tipoPrueba.setCodigoPrueba(codigoNormalizado);
-        catalogoPruebas.put(codigoNormalizado, tipoPrueba);
+        catalogoService.registrarPruebaEnCatalogo(tipoPrueba);
+        registrarAuditoria(adminId, "GUARDAR_TIPO_PRUEBA:" + codigoNormalizado, true);
         return tipoPrueba;
+    }
+
+    private void registrarAuditoria(String usuario, String accion, boolean exito) {
+        if (auditService != null) {
+            String actor = (usuario != null && !usuario.isBlank()) ? usuario.trim() : "ADMIN";
+            auditService.registrarEvento(actor, accion, exito, "127.0.0.1");
+        }
     }
 }

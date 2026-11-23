@@ -2,13 +2,25 @@ package es.uclm.esi.iso2.servidor;
 
 import es.uclm.sescam.contratos.informes.EstudioDicomDTO;
 import es.uclm.sescam.contratos.informes.IVisorDicomService;
+import es.uclm.sescam.contratos.security.IAuditService;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 public class VisorDicomServiceImpl implements IVisorDicomService {
 
+    private final IAuditService auditService;
+
+    public VisorDicomServiceImpl() {
+        this(new AuditServiceImpl());
+    }
+
+    public VisorDicomServiceImpl(IAuditService auditService) {
+        this.auditService = auditService;
+    }
+
     @Override
     public EstudioDicomDTO obtenerEstudioDicom(String estudioId, String usuarioId) {
+        
         if (estudioId == null || estudioId.isBlank()) {
             throw new IllegalArgumentException("El ID del estudio DICOM es obligatorio");
         }
@@ -17,6 +29,10 @@ public class VisorDicomServiceImpl implements IVisorDicomService {
         }
         if (!verificarConformidadDicom(estudioId)) {
             throw new IllegalArgumentException("El estudio no cumple con el estándar DICOM: " + estudioId);
+        }
+
+        if (auditService != null) {
+            auditService.registrarEvento(usuarioId.trim(), "VISUALIZAR_ESTUDIO_DICOM:" + estudioId.trim(), true, "127.0.0.1");
         }
 
         // Simulación de recuperación desde el servidor PACS (CU-27)
