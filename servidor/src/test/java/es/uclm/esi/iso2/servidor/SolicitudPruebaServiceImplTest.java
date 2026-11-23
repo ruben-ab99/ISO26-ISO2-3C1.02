@@ -37,7 +37,7 @@ class SolicitudPruebaServiceImplTest {
                 paciente, medico, "tac-abdo", 1, "Sospecha de apendicitis aguda"
         );
         SolicitudPruebaDTO preferente = servicio.crearSolicitudPrueba(
-                paciente, medico, "RM-CRANEO", 2, "Cefalea persistente con signos de alarma"
+                paciente, medico, "RM-CRANEO", 3, "Cefalea persistente con signos de alarma"
         );
         SolicitudPruebaDTO ordinaria = servicio.crearSolicitudPrueba(
                 paciente, medico, "RX-TORAX", 5, "Control preoperatorio rutinario"
@@ -85,7 +85,7 @@ class SolicitudPruebaServiceImplTest {
     void consultarYListarSolicitudesPaciente() {
         // Preparar
         SolicitudPruebaDTO s1 = servicio.crearSolicitudPrueba("PAC-10", "MED-01", "ECO-ABDO", 4, "Dolor abdominal");
-        servicio.crearSolicitudPrueba("PAC-10", "MED-02", "RX-TORAX", 3, "Revisión");
+        servicio.crearSolicitudPrueba("PAC-10", "MED-02", "RX-TORAX", 2, "Revisión");
 
         // Ejecutar
         SolicitudPruebaDTO consultada = servicio.consultarSolicitud(s1.getSolicitudId());
