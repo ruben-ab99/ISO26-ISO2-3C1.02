@@ -4,7 +4,9 @@ import es.uclm.sescam.contratos.informes.IRegistroPruebaService;
 import es.uclm.sescam.contratos.informes.RegistroPruebaDTO;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -72,5 +74,20 @@ public class RegistroPruebaServiceImpl implements IRegistroPruebaService {
             throw new IllegalStateException("No existe ningún registro de prueba con ID: " + registroId);
         }
         return registro;
+    }
+
+    @Override
+    public List<RegistroPruebaDTO> listarRegistrosPaciente(String pacienteId) {
+        if (pacienteId == null || pacienteId.isBlank()) {
+            throw new IllegalArgumentException("El ID del paciente es obligatorio");
+        }
+        String pacienteLimpio = pacienteId.trim();
+        List<RegistroPruebaDTO> resultado = new ArrayList<>();
+        for (RegistroPruebaDTO registro : repositorioRegistros.values()) {
+            if (pacienteLimpio.equals(registro.getPacienteId())) {
+                resultado.add(registro);
+            }
+        }
+        return resultado;
     }
 }
