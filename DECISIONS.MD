@@ -362,3 +362,25 @@ Configurar `jacoco-maven-plugin` (`0.8.12`) en el `pom.xml` padre enlazado al ci
 - **Motivo:** Permite auditar objetivamente en cada Pull Request que los nuevos servicios superan el umbral de calidad exigido.
 - **Consecuencias:** Cualquier cambio en el POM padre obliga a mantener sincronizado `${argLine}` entre JaCoCo y Surefire.
 
+---
+
+## 📌 ADR-016: Generación periódica de citas y cancelación en cascada en seguimientos clínicos (CU-07)
+
+- **Fecha:** 23/11/2026
+- **Iteración:** It5
+- **Origen / Trazabilidad:** Issue #71 · CU-07 · ADR-002 · ADR-012
+- **Estado:** Aprobado
+
+### 🎯 Contexto y Problema
+El caso de uso CU-07 (Prescribir prueba de seguimiento) requiere pautar controles periódicos (ej. nódulos, revisiones oncológicas o cribados) generando automáticamente la necesidad de nuevas citas (`CU-07 <<include>> CU-13`) sin acoplar el módulo `prescripciones` a la implementación interna de `citacion` ni dejar citas huérfanas si se anula el seguimiento.
+
+### 💡 Decisión Tomada
+Inyectar por constructor las interfaces `ICatalogoPruebasService` e `IGestionCitasService` en `PrescripcionSeguimientoServiceImpl`, calcular automáticamente las fechas de revisión (`fechaInicio + i * periodicidadDias`) programando cada cita a través del contrato de citación, almacenar sus identificadores en `PrescripcionSeguimientoDTO` y propagar la cancelación en cascada a las citas asociadas cuando se anula el seguimiento.
+
+### 🔄 Alternativas Valoradas
+1. Instanciar directamente `GestionCitasServiceImpl` dentro de `prescripciones` o duplicar el almacenamiento de citas.
+2. Registrar únicamente el seguimiento sin invocar el servicio de citación, dejando las citas sin programar.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Mantiene el desacoplamiento entre dominios exigido por CU-29 (ADR-002), permite probar el servicio de forma aislada con stubs/implementaciones en memoria (ADR-012) y garantiza consistencia clínica entre seguimientos y citas.
+- **Consecuencias:** La programación de un seguimiento valida previamente que la prueba exista y esté activa en el catálogo (CU-24) y requiere disponibilidad horaria para cada fecha calculada.
