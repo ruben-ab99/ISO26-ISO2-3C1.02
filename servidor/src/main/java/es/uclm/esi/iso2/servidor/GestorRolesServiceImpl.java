@@ -3,45 +3,65 @@ package es.uclm.esi.iso2.servidor;
 import es.uclm.sescam.contratos.roles.IGestorRolesService;
 import es.uclm.sescam.contratos.roles.Rol;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class GestorRolesServiceImpl implements IGestorRolesService {
+
+    private final Map<String, Rol> rolesPorUsuario = new ConcurrentHashMap<>();
 
     @Override
     public Rol extraerRolDeToken(String tokenSSO) {
-        if (tokenSSO == null || !tokenSSO.startsWith("token-sso-")) {
-            return Rol.SIN_ROL;
+        if (tokenSSO == null || tokenSSO.isBlank()) {
+            return null;
         }
-        
-    
-        String[] partes = tokenSSO.split("-");
-        if (partes.length >= 4) {
-            try {
-                return Rol.valueOf(partes[3].toUpperCase());
-            } catch (IllegalArgumentException e) {
-                return Rol.SIN_ROL;
+        String[] partes = tokenSSO.trim().split("-");
+        for (String parte : partes) {
+            String candidata = parte.trim().toUpperCase();
+            for (Rol r : Rol.values()) {
+                if (r.name().equals(candidata)) {
+                    return r;
+                }
             }
         }
-        return Rol.SIN_ROL;
+        return null;
     }
 
     @Override
     public boolean tieneAcceso(String tokenSSO, Rol rolRequerido) {
-        Rol rolActual = extraerRolDeToken(tokenSSO);
-        
-        // El administrador tiene acceso total por defecto
-        if (rolActual == Rol.ADMINISTRADOR) {
-            return true;
+        if (rolRequerido == null) {
+            return false;
         }
-        return rolActual == rolRequerido;
+        Rol rolUsuario = extraerRolDeToken(tokenSSO);
+        return rolUsuario != null && rolUsuario == rolRequerido;
     }
 
     @Override
     public boolean asignarRol(String idUsuario, Rol nuevoRol, String tokenAdmin) {
-        // Solo un ADMINISTRADOR puede asignar roles
-        if (!tieneAcceso(tokenAdmin, Rol.ADMINISTRADOR)) {
+        if (idUsuario == null || idUsuario.isBlank() || nuevoRol == null) {
             return false;
         }
-        // Aqu  ir a la llamada HTTP real al backend. Por ahora lo damos por v lido.
-        System.out.println("Rol " + nuevoRol + " asignado al usuario " + idUsuario);
+        Rol rolSolicitante = extraerRolDeToken(tokenAdmin);
+        if (!esAdmin(rolSolicitante)) {
+            return false;
+        }
+        rolesPorUsuario.put(idUsuario.trim(), nuevoRol);
         return true;
+    }
+
+    @Override
+    public Rol obtenerRolUsuario(String idUsuario) {
+        if (idUsuario == null || idUsuario.isBlank()) {
+            return null;
+        }
+        return rolesPorUsuario.get(idUsuario.trim());
+    }
+
+    private boolean esAdmin(Rol rol) {
+        if (rol == null) {
+            return false;
+        }
+        String nombre = rol.name();
+        return "ADMINISTRADOR".equals(nombre) || "ADMIN".equals(nombre);
     }
 }
