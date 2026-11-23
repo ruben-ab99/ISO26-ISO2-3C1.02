@@ -86,4 +86,22 @@ class ConfiguracionSistemaServiceImplTest {
         TipoPruebaDTO sinDuracion = new TipoPruebaDTO("RX-1", "RX", "RX", "S1", 0, "", false, false, "", true);
         assertThrows(IllegalArgumentException.class, () -> servicio.guardarOActualizarTipoPrueba(sinDuracion, "ADM-01"));
     }
+
+    @Test
+    @DisplayName("Guardar tipo de prueba en CU-17 lo hace visible inmediatamente en el catálogo CU-24")
+    void guardarTipoPruebaComparteCatalogoConCu24() {
+        CatalogoPruebasServiceImpl catalogoCompartido = new CatalogoPruebasServiceImpl();
+        ConfiguracionSistemaServiceImpl configService = new ConfiguracionSistemaServiceImpl(catalogoCompartido);
+
+        TipoPruebaDTO nuevaPrueba = new TipoPruebaDTO(
+                "mamo-3d", "Mamografía Digital con Tomosíntesis", "MAMO", "Sala Mama-01",
+                25, "No aplicar desodorante ni talco", false, false, "Sin contraindicaciones", true
+        );
+
+        configService.guardarOActualizarTipoPrueba(nuevaPrueba, "ADM-01");
+
+        TipoPruebaDTO recuperada = catalogoCompartido.consultarDetallePrueba("MAMO-3D");
+        assertNotNull(recuperada);
+        assertEquals("Mamografía Digital con Tomosíntesis", recuperada.getNombre());
+    }
 }

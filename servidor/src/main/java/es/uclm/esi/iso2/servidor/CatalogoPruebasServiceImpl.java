@@ -4,13 +4,13 @@ import es.uclm.sescam.contratos.catalogo.ICatalogoPruebasService;
 import es.uclm.sescam.contratos.catalogo.TipoPruebaDTO;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class CatalogoPruebasServiceImpl implements ICatalogoPruebasService {
 
-    private final Map<String, TipoPruebaDTO> catalogo = new LinkedHashMap<>();
+    private final Map<String, TipoPruebaDTO> catalogo = new ConcurrentHashMap<>();
 
     public CatalogoPruebasServiceImpl() {
         cargarCatalogoInicialSescam();
@@ -43,9 +43,12 @@ public class CatalogoPruebasServiceImpl implements ICatalogoPruebasService {
         ));
     }
 
+    @Override
     public void registrarPruebaEnCatalogo(TipoPruebaDTO prueba) {
         if (prueba != null && prueba.getCodigoPrueba() != null && !prueba.getCodigoPrueba().isBlank()) {
-            catalogo.put(prueba.getCodigoPrueba().toUpperCase(), prueba);
+            String codigoNormalizado = prueba.getCodigoPrueba().trim().toUpperCase();
+            prueba.setCodigoPrueba(codigoNormalizado);
+            catalogo.put(codigoNormalizado, prueba);
         }
     }
 
