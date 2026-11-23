@@ -6,4 +6,6 @@ public interface ICatalogoPruebasService {
     List<TipoPruebaDTO> listarCatalogoPruebas();
     TipoPruebaDTO consultarDetallePrueba(String codigoPrueba);
     List<TipoPruebaDTO> filtrarPorModalidad(String modalidad);
+    default void registrarPruebaEnCatalogo(TipoPruebaDTO prueba) {
+    }
 }

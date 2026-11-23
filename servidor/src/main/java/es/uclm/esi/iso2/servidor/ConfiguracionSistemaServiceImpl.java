@@ -1,15 +1,16 @@
 package es.uclm.esi.iso2.servidor;
 
+import es.uclm.sescam.contratos.catalogo.ICatalogoPruebasService;
 import es.uclm.sescam.contratos.catalogo.IConfiguracionSistemaService;
 import es.uclm.sescam.contratos.catalogo.ParametroSistemaDTO;
 import es.uclm.sescam.contratos.catalogo.TipoPruebaDTO;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class ConfiguracionSistemaServiceImpl implements IConfiguracionSistemaService {
 
@@ -17,10 +18,18 @@ public class ConfiguracionSistemaServiceImpl implements IConfiguracionSistemaSer
             "HORARIOS", "POLITICAS_CITACION", "PRIORIDADES", "PROTOCOLOS"
     );
 
-    private final Map<String, ParametroSistemaDTO> parametros = new LinkedHashMap<>();
-    private final Map<String, TipoPruebaDTO> catalogoPruebas = new LinkedHashMap<>();
+    private final Map<String, ParametroSistemaDTO> parametros = new ConcurrentHashMap<>();
+    private final ICatalogoPruebasService catalogoService;
 
     public ConfiguracionSistemaServiceImpl() {
+        this(new CatalogoPruebasServiceImpl());
+    }
+
+    public ConfiguracionSistemaServiceImpl(ICatalogoPruebasService catalogoService) {
+        if (catalogoService == null) {
+            throw new IllegalArgumentException("El servicio de catálogo de pruebas no puede ser nulo");
+        }
+        this.catalogoService = catalogoService;
         cargarParametrosPorDefecto();
     }
 
@@ -115,7 +124,7 @@ public class ConfiguracionSistemaServiceImpl implements IConfiguracionSistemaSer
 
         String codigoNormalizado = tipoPrueba.getCodigoPrueba().trim().toUpperCase();
         tipoPrueba.setCodigoPrueba(codigoNormalizado);
-        catalogoPruebas.put(codigoNormalizado, tipoPrueba);
+        catalogoService.registrarPruebaEnCatalogo(tipoPrueba);
         return tipoPrueba;
     }
 }
