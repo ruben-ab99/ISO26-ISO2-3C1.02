@@ -28,9 +28,34 @@ class GestionCitasServiceImplTest {
     @DisplayName("Constructores validan notificador nulo y permiten instancia por defecto")
     void constructoresValidacion() {
         assertThrows(IllegalArgumentException.class, () -> new GestionCitasServiceImpl(null));
+        assertThrows(IllegalArgumentException.class, () -> new GestionCitasServiceImpl((p, c, t, d) -> {}, null, "tok"));
         GestionCitasServiceImpl porDefecto = new GestionCitasServiceImpl();
         CitaDTO cita = porDefecto.programarCita("PAC-1", "MED-1", "RX-TORAX", LocalDate.of(2026, 12, 1), "09:00-09:15");
         assertEquals("PROGRAMADA", cita.getEstado());
+    }
+
+    @Test
+    @DisplayName("Usuario sin rol ADMISION ni MEDICO recibe SecurityException en gestión de citas")
+    void usuarioSinPermisoLanzaSecurityException() {
+        GestorRolesServiceImpl roles = new GestorRolesServiceImpl();
+        GestionCitasServiceImpl servicioSinPermiso = new GestionCitasServiceImpl(
+                (p, c, t, d) -> {}, roles, "token-sso-pac01-PACIENTE-1234"
+        );
+        GestionCitasServiceImpl servicioSinToken = new GestionCitasServiceImpl(
+                (p, c, t, d) -> {}, roles, ""
+        );
+
+        LocalDate fecha = LocalDate.of(2026, 12, 10);
+        assertThrows(SecurityException.class, () ->
+                servicioSinPermiso.programarCita("PAC-01", "MED-01", "RX", fecha, "10:00"));
+        assertThrows(SecurityException.class, () ->
+                servicioSinPermiso.reprogramarCita("CIT-1", fecha, "11:00"));
+        assertThrows(SecurityException.class, () ->
+                servicioSinPermiso.cancelarCita("CIT-1", "Motivo"));
+        assertThrows(SecurityException.class, () ->
+                servicioSinToken.consultarCita("CIT-1"));
+        assertThrows(SecurityException.class, () ->
+                servicioSinToken.listarCitasPaciente("PAC-01"));
     }
 
     @Test
@@ -48,7 +73,6 @@ class GestionCitasServiceImplTest {
         assertEquals(1, eventosNotificados.size());
         assertTrue(eventosNotificados.get(0).startsWith("PROGRAMADA:PAC-01:"));
 
-        // Mismo médico, fecha y franja lanza conflicto
         assertThrows(IllegalStateException.class, () ->
                 servicio.programarCita("PAC-02", "MED-01", "RX-TORAX", fecha, "10:00-10:30"));
     }
@@ -95,18 +119,15 @@ class GestionCitasServiceImplTest {
         CitaDTO c1 = servicio.programarCita("PAC-01", "MED-01", "RM-CRANEO", fecha1, "10:00-10:45");
         servicio.programarCita("PAC-02", "MED-01", "RM-CRANEO", fecha2, "12:00-12:45");
 
-        // Conflicto al mover c1 a la franja ocupada por c2
         assertThrows(IllegalStateException.class, () ->
                 servicio.reprogramarCita(c1.getCitaId(), fecha2, "12:00-12:45"));
 
-        // Reprogramación válida
         CitaDTO reprogramada = servicio.reprogramarCita(c1.getCitaId(), fecha2, "16:00-16:45");
         assertEquals("REPROGRAMADA", reprogramada.getEstado());
         assertEquals(fecha2, reprogramada.getFecha());
         assertEquals("16:00-16:45", reprogramada.getFranjaHoraria());
         assertTrue(eventosNotificados.get(eventosNotificados.size() - 1).startsWith("REPROGRAMADA:PAC-01:"));
 
-        // Validaciones de argumentos
         assertThrows(IllegalArgumentException.class, () -> servicio.reprogramarCita(null, fecha2, "17:00"));
         assertThrows(IllegalArgumentException.class, () -> servicio.reprogramarCita(c1.getCitaId(), null, "17:00"));
         assertThrows(IllegalArgumentException.class, () -> servicio.reprogramarCita(c1.getCitaId(), fecha2, " "));
@@ -123,15 +144,12 @@ class GestionCitasServiceImplTest {
         assertEquals("Solicitud del paciente", cancelada.getMotivoCancelacion());
         assertTrue(eventosNotificados.get(eventosNotificados.size() - 1).startsWith("CANCELADA:PAC-01:"));
 
-        // No se puede volver a cancelar ni reprogramar una cita cancelada
         assertThrows(IllegalStateException.class, () -> servicio.cancelarCita(c1.getCitaId(), "Otro motivo"));
         assertThrows(IllegalStateException.class, () -> servicio.reprogramarCita(c1.getCitaId(), fecha, "10:00-10:30"));
 
-        // La franja cancelada vuelve a estar libre para otro paciente
         CitaDTO nuevaEnFranjaLiberada = servicio.programarCita("PAC-03", "MED-01", "TAC-ABDO", fecha, "09:00-09:30");
         assertEquals("PROGRAMADA", nuevaEnFranjaLiberada.getEstado());
 
-        // Validaciones de argumentos
         assertThrows(IllegalArgumentException.class, () -> servicio.cancelarCita(null, "Motivo"));
         assertThrows(IllegalArgumentException.class, () -> servicio.cancelarCita(c1.getCitaId(), null));
         assertThrows(IllegalArgumentException.class, () -> servicio.cancelarCita(c1.getCitaId(), "  "));

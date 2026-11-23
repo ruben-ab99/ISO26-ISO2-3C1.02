@@ -2,6 +2,9 @@ package es.uclm.esi.iso2.servidor;
 
 import es.uclm.sescam.contratos.citacion.CitaDTO;
 import es.uclm.sescam.contratos.citacion.IGestionCitasService;
+import es.uclm.sescam.contratos.roles.IGestorRolesService;
+import es.uclm.sescam.contratos.roles.Rol;
+import es.uclm.sescam.contratos.security.IAuditService;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -15,21 +18,56 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
 
     private final Map<String, CitaDTO> repositorioCitas = new LinkedHashMap<>();
     private final INotificadorCitas notificador;
+    private final IGestorRolesService gestorRoles;
+    private final String tokenSSO;
+    private final IAuditService auditService;
 
     public GestionCitasServiceImpl() {
-        this.notificador = (pacienteId, citaId, tipoEvento, detalle) -> {};
+        this((pacienteId, citaId, tipoEvento, detalle) -> {},
+                new GestorRolesServiceImpl(),
+                "token-sso-admision-ADMISION-default",
+                new AuditServiceImpl());
     }
 
     public GestionCitasServiceImpl(INotificadorCitas notificador) {
+        this(notificador,
+                new GestorRolesServiceImpl(),
+                "token-sso-admision-ADMISION-default",
+                new AuditServiceImpl());
+    }
+
+    public GestionCitasServiceImpl(INotificadorCitas notificador, IGestorRolesService gestorRoles, String tokenSSO) {
+        this(notificador, gestorRoles, tokenSSO, new AuditServiceImpl());
+    }
+
+    public GestionCitasServiceImpl(INotificadorCitas notificador, IGestorRolesService gestorRoles,
+                                   String tokenSSO, IAuditService auditService) {
         if (notificador == null) {
             throw new IllegalArgumentException("El notificador de citas no puede ser nulo");
         }
+        if (gestorRoles == null) {
+            throw new IllegalArgumentException("El servicio de gestión de roles no puede ser nulo");
+        }
         this.notificador = notificador;
+        this.gestorRoles = gestorRoles;
+        this.tokenSSO = tokenSSO;
+        this.auditService = auditService;
+    }
+
+    private void verificarPermisoGestionCitas() {
+        boolean esAdmision = gestorRoles.tieneAcceso(tokenSSO, Rol.ADMISION);
+        boolean esMedico = gestorRoles.tieneAcceso(tokenSSO, Rol.MEDICO);
+        if (!esAdmision && !esMedico) {
+            registrarAuditoria("SISTEMA", "ACCESO_DENEGADO_GESTION_CITAS", false);
+            throw new SecurityException("Acceso denegado: Se requiere rol ADMISION o MEDICO.");
+        }
     }
 
     @Override
     public CitaDTO programarCita(String pacienteId, String medicoId, String codigoPrueba,
                                  LocalDate fecha, String franjaHoraria) {
+        verificarPermisoGestionCitas();
+
         if (pacienteId == null || pacienteId.isBlank()) {
             throw new IllegalArgumentException("El identificador del paciente es obligatorio");
         }
@@ -73,11 +111,15 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
                 "PROGRAMADA",
                 "Cita programada para el " + fecha + " en franja " + franjaLimpia
         );
+        registrarAuditoria(medicoLimpio, "PROGRAMAR_CITA:" + nuevaCitaId, true);
         return cita;
     }
 
     @Override
     public CitaDTO consultarCita(String citaId) {
+        if (tokenSSO == null || tokenSSO.isBlank()) {
+            throw new SecurityException("Token de sesión obligatorio para consultar citas");
+        }
         if (citaId == null || citaId.isBlank()) {
             throw new IllegalArgumentException("El identificador de la cita es obligatorio");
         }
@@ -90,6 +132,9 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
 
     @Override
     public List<CitaDTO> listarCitasPaciente(String pacienteId) {
+        if (tokenSSO == null || tokenSSO.isBlank()) {
+            throw new SecurityException("Token de sesión obligatorio para listar citas");
+        }
         if (pacienteId == null || pacienteId.isBlank()) {
             throw new IllegalArgumentException("El identificador del paciente es obligatorio");
         }
@@ -105,6 +150,8 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
 
     @Override
     public CitaDTO reprogramarCita(String citaId, LocalDate nuevaFecha, String nuevaFranja) {
+        verificarPermisoGestionCitas();
+
         if (citaId == null || citaId.isBlank()) {
             throw new IllegalArgumentException("El identificador de la cita es obligatorio");
         }
@@ -136,11 +183,14 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
                 "REPROGRAMADA",
                 "Cita reprogramada al " + nuevaFecha + " en franja " + franjaLimpia
         );
+        registrarAuditoria(cita.getMedicoId(), "REPROGRAMAR_CITA:" + cita.getCitaId(), true);
         return cita;
     }
 
     @Override
     public CitaDTO cancelarCita(String citaId, String motivo) {
+        verificarPermisoGestionCitas();
+
         if (citaId == null || citaId.isBlank()) {
             throw new IllegalArgumentException("El identificador de la cita es obligatorio");
         }
@@ -163,6 +213,7 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
                 "CANCELADA",
                 "Cita cancelada. Motivo: " + motivo.trim()
         );
+        registrarAuditoria(cita.getMedicoId(), "CANCELAR_CITA:" + cita.getCitaId(), true);
         return cita;
     }
 
@@ -181,5 +232,12 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
             }
         }
         return false;
+    }
+
+    private void registrarAuditoria(String usuario, String accion, boolean exito) {
+        if (auditService != null) {
+            String actor = (usuario != null && !usuario.isBlank()) ? usuario.trim() : "SISTEMA";
+            auditService.registrarEvento(actor, accion, exito, "127.0.0.1");
+        }
     }
 }

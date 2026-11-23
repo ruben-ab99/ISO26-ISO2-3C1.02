@@ -2,6 +2,9 @@ package es.uclm.esi.iso2.servidor;
 
 import es.uclm.sescam.contratos.citacion.INotificacionesService;
 import es.uclm.sescam.contratos.citacion.NotificacionDTO;
+import es.uclm.sescam.contratos.roles.IGestorRolesService;
+import es.uclm.sescam.contratos.roles.Rol;
+import es.uclm.sescam.contratos.security.IAuditService;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -18,10 +21,41 @@ public class NotificacionesServiceImpl implements INotificacionesService {
     );
 
     private final Map<String, NotificacionDTO> repositorioNotificaciones = new LinkedHashMap<>();
+    private final IGestorRolesService gestorRoles;
+    private final String tokenSSO;
+    private final IAuditService auditService;
+
+    public NotificacionesServiceImpl() {
+        this(new GestorRolesServiceImpl(), "token-sso-admision-ADMISION-default", new AuditServiceImpl());
+    }
+
+    public NotificacionesServiceImpl(IGestorRolesService gestorRoles, String tokenSSO) {
+        this(gestorRoles, tokenSSO, new AuditServiceImpl());
+    }
+
+    public NotificacionesServiceImpl(IGestorRolesService gestorRoles, String tokenSSO, IAuditService auditService) {
+        if (gestorRoles == null) {
+            throw new IllegalArgumentException("El servicio de gestión de roles no puede ser nulo");
+        }
+        this.gestorRoles = gestorRoles;
+        this.tokenSSO = tokenSSO;
+        this.auditService = auditService;
+    }
+
+    private void verificarPermisoEnvioNotificacion() {
+        boolean esAdmision = gestorRoles.tieneAcceso(tokenSSO, Rol.ADMISION);
+        boolean esMedico = gestorRoles.tieneAcceso(tokenSSO, Rol.MEDICO);
+        if (!esAdmision && !esMedico) {
+            registrarAuditoria("SISTEMA", "ACCESO_DENEGADO_NOTIFICACIONES", false);
+            throw new SecurityException("Acceso denegado: Se requiere rol ADMISION o MEDICO para enviar notificaciones.");
+        }
+    }
 
     @Override
     public NotificacionDTO enviarNotificacion(String pacienteId, String tipoAviso, String titulo,
                                               String mensaje, String referenciaId) {
+        verificarPermisoEnvioNotificacion();
+
         if (pacienteId == null || pacienteId.isBlank()) {
             throw new IllegalArgumentException("El identificador del paciente es obligatorio");
         }
@@ -54,11 +88,15 @@ public class NotificacionesServiceImpl implements INotificacionesService {
         );
 
         repositorioNotificaciones.put(nuevoId, notificacion);
+        registrarAuditoria(pacienteId, "ENVIAR_NOTIFICACION:" + nuevoId, true);
         return notificacion;
     }
 
     @Override
     public List<NotificacionDTO> listarNotificacionesPaciente(String pacienteId) {
+        if (tokenSSO == null || tokenSSO.isBlank()) {
+            throw new SecurityException("Token de sesión obligatorio para consultar notificaciones");
+        }
         if (pacienteId == null || pacienteId.isBlank()) {
             throw new IllegalArgumentException("El identificador del paciente es obligatorio");
         }
@@ -74,6 +112,9 @@ public class NotificacionesServiceImpl implements INotificacionesService {
 
     @Override
     public NotificacionDTO marcarComoLeida(String notificacionId, String pacienteId) {
+        if (tokenSSO == null || tokenSSO.isBlank()) {
+            throw new SecurityException("Token de sesión obligatorio para gestionar notificaciones");
+        }
         if (notificacionId == null || notificacionId.isBlank()) {
             throw new IllegalArgumentException("El identificador de la notificación es obligatorio");
         }
@@ -90,6 +131,14 @@ public class NotificacionesServiceImpl implements INotificacionesService {
         }
 
         notificacion.setLeida(true);
+        registrarAuditoria(pacienteId, "LEER_NOTIFICACION:" + notificacion.getId(), true);
         return notificacion;
+    }
+
+    private void registrarAuditoria(String usuario, String accion, boolean exito) {
+        if (auditService != null) {
+            String actor = (usuario != null && !usuario.isBlank()) ? usuario.trim() : "SISTEMA";
+            auditService.registrarEvento(actor, accion, exito, "127.0.0.1");
+        }
     }
 }
