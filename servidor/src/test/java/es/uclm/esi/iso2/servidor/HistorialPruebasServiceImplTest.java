@@ -9,8 +9,6 @@ import es.uclm.sescam.contratos.informes.RegistroPruebaDTO;
 import es.uclm.sescam.contratos.security.AuditLogDTO;
 import es.uclm.sescam.contratos.security.IAuditService;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -20,7 +18,21 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Pruebas de CU-03 (Consultar historial de pruebas realizadas).
+ * Técnicas: clases de equivalencia (paciente con / sin pruebas, prueba propia / ajena /
+ * inexistente), valores límite del rango de fechas (extremos incluidos; fin un día anterior al
+ * inicio no válido), criterio each use entre parámetros y conjetura de errores (mayúsculas en el
+ * filtro, auditoría opcional). Los servicios colaboradores se sustituyen por stubs (ADR-012).
+ */
 class HistorialPruebasServiceImplTest {
 
     private Map<String, RegistroPruebaDTO> registrosStub;
@@ -116,34 +128,49 @@ class HistorialPruebasServiceImplTest {
         servicio = new HistorialPruebasServiceImpl(new StubRegistroPrueba(), new StubInformesImagenes(), new StubAudit());
     }
 
-    // ---------- Constructor ----------
+    private static final String MSG_PACIENTE = "El identificador del paciente es obligatorio";
+
+    // ---------------------------------------------------------------- constructor
 
     @Test
     @DisplayName("El constructor rechaza un servicio de registro nulo")
     void constructorConRegistroNuloLanzaExcepcion() {
-        assertThrows(IllegalArgumentException.class,
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> new HistorialPruebasServiceImpl(null, new StubInformesImagenes(), new StubAudit()));
+
+        assertEquals("El servicio de registro de pruebas es obligatorio", e.getMessage());
     }
 
     @Test
     @DisplayName("El constructor rechaza un servicio de informes nulo")
     void constructorConInformesNuloLanzaExcepcion() {
-        assertThrows(IllegalArgumentException.class,
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
                 () -> new HistorialPruebasServiceImpl(new StubRegistroPrueba(), null, new StubAudit()));
+
+        assertEquals("El servicio de informes e imágenes es obligatorio", e.getMessage());
     }
 
-    // ---------- consultarHistorial ----------
+    // ---------------------------------------------------------------- consultarHistorial
 
     @Test
     @DisplayName("Devuelve solo las pruebas realizadas del paciente, de la más reciente a la más antigua")
     void consultarHistorialDevuelveRealizadasOrdenadas() {
         List<HistorialPruebaDTO> historial = servicio.consultarHistorial("PAC-001");
 
-        assertEquals(3, historial.size());
-        assertEquals("REG-002", historial.get(0).getRegistroId());
-        assertEquals("REG-003", historial.get(1).getRegistroId());
-        assertEquals("REG-001", historial.get(2).getRegistroId());
-        assertTrue(historial.stream().allMatch(p -> "PAC-001".equals(p.getPacienteId())));
+        assertAll(
+                () -> assertEquals(3, historial.size()),
+                () -> assertEquals("REG-002", historial.get(0).getRegistroId()),
+                () -> assertEquals("REG-003", historial.get(1).getRegistroId()),
+                () -> assertEquals("REG-001", historial.get(2).getRegistroId()),
+                () -> assertTrue(historial.stream().allMatch(p -> "PAC-001".equals(p.getPacienteId()))));
+    }
+
+    @Test
+    @DisplayName("Una prueba pendiente (REG-004) no aparece en el historial")
+    void consultarHistorialExcluyeLasPruebasNoRealizadas() {
+        List<HistorialPruebaDTO> historial = servicio.consultarHistorial("PAC-001");
+
+        assertTrue(historial.stream().noneMatch(p -> "REG-004".equals(p.getRegistroId())));
     }
 
     @Test
@@ -151,9 +178,10 @@ class HistorialPruebasServiceImplTest {
     void consultarHistorialIndicaEstudioDeImagen() {
         List<HistorialPruebaDTO> historial = servicio.consultarHistorial("PAC-001");
 
-        assertTrue(historial.get(0).isTieneEstudioImagen());
-        assertFalse(historial.get(1).isTieneEstudioImagen());
-        assertEquals("Paciente con claustrofobia", historial.get(0).getIncidencias());
+        assertAll(
+                () -> assertTrue(historial.get(0).isTieneEstudioImagen()),
+                () -> assertFalse(historial.get(1).isTieneEstudioImagen()),
+                () -> assertEquals("Paciente con claustrofobia", historial.get(0).getIncidencias()));
     }
 
     @Test
@@ -162,104 +190,180 @@ class HistorialPruebasServiceImplTest {
         assertTrue(servicio.consultarHistorial("PAC-NUEVO").isEmpty());
     }
 
-    @Test
-    @DisplayName("Un paciente nulo o vacío lanza IllegalArgumentException")
-    void consultarHistorialConPacienteInvalidoLanzaExcepcion() {
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarHistorial(null));
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarHistorial("  "));
+    @ParameterizedTest(name = "paciente [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {"  "})
+    @DisplayName("Consultar con paciente nulo, vacío o en blanco lanza excepción")
+    void consultarHistorialConPacienteInvalidoLanzaExcepcion(String paciente) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> servicio.consultarHistorial(paciente));
+
+        assertEquals(MSG_PACIENTE, e.getMessage());
     }
 
     @Test
-    @DisplayName("Cada consulta del historial queda registrada en auditoría")
+    @DisplayName("Cada consulta del historial queda registrada en auditoría con el paciente sin espacios")
     void consultarHistorialRegistraAuditoria() {
         servicio.consultarHistorial(" PAC-001 ");
 
-        assertEquals(1, eventosAuditoria.size());
-        assertEquals("PAC-001", eventosAuditoria.get(0).getUsuario());
-        assertEquals("CONSULTAR_HISTORIAL_PRUEBAS", eventosAuditoria.get(0).getAccion());
-        assertTrue(eventosAuditoria.get(0).isExito());
+        assertAll(
+                () -> assertEquals(1, eventosAuditoria.size()),
+                () -> assertEquals("PAC-001", eventosAuditoria.get(0).getUsuario()),
+                () -> assertEquals("CONSULTAR_HISTORIAL_PRUEBAS", eventosAuditoria.get(0).getAccion()),
+                () -> assertTrue(eventosAuditoria.get(0).isExito()));
     }
 
     @Test
     @DisplayName("Funciona sin servicio de auditoría (es opcional)")
-    void consultarHistorialSinAuditoria() {
+    void consultarHistorialSinAuditoriaFunciona() {
         HistorialPruebasServiceImpl sinAudit =
                 new HistorialPruebasServiceImpl(new StubRegistroPrueba(), new StubInformesImagenes(), null);
+
         assertEquals(3, sinAudit.consultarHistorial("PAC-001").size());
     }
 
-    // ---------- Filtros ----------
+    // ---------------------------------------------------------------- consultarHistorialPorTipo
 
-    @Test
-    @DisplayName("Filtra el historial por tipo de prueba sin distinguir mayúsculas")
-    void consultarHistorialPorTipoFiltra() {
-        List<HistorialPruebaDTO> rx = servicio.consultarHistorialPorTipo("PAC-001", "rx tórax");
+    @ParameterizedTest(name = "el filtro \"{0}\" devuelve las 2 radiografías")
+    @ValueSource(strings = {"RX Tórax", "rx tórax", "RX TÓRAX"})
+    @DisplayName("Filtrar por tipo de prueba no distingue mayúsculas")
+    void consultarHistorialPorTipoFiltraSinDistinguirMayusculas(String tipo) {
+        List<HistorialPruebaDTO> rx = servicio.consultarHistorialPorTipo("PAC-001", tipo);
 
-        assertEquals(2, rx.size());
-        assertTrue(rx.stream().allMatch(p -> "RX Tórax".equals(p.getTipoPrueba())));
+        assertAll(
+                () -> assertEquals(2, rx.size()),
+                () -> assertTrue(rx.stream().allMatch(p -> "RX Tórax".equals(p.getTipoPrueba()))));
     }
 
     @Test
-    @DisplayName("El filtro por tipo exige un tipo de prueba")
-    void consultarHistorialPorTipoSinTipoLanzaExcepcion() {
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarHistorialPorTipo("PAC-001", null));
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarHistorialPorTipo("PAC-001", " "));
+    @DisplayName("Filtrar por un tipo sin pruebas devuelve una lista vacía")
+    void consultarHistorialPorTipoSinCoincidenciasDevuelveListaVacia() {
+        assertTrue(servicio.consultarHistorialPorTipo("PAC-001", "Ecografía").isEmpty());
     }
 
+    @ParameterizedTest(name = "tipo [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    @DisplayName("Filtrar con tipo nulo, vacío o en blanco lanza excepción")
+    void consultarHistorialPorTipoSinTipoLanzaExcepcion(String tipo) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> servicio.consultarHistorialPorTipo("PAC-001", tipo));
+
+        assertEquals("El tipo de prueba es obligatorio", e.getMessage());
+    }
+
+    // ---------------------------------------------------------------- consultarHistorialPorFechas
+
     @Test
-    @DisplayName("Filtra el historial por rango de fechas (ambos extremos incluidos)")
-    void consultarHistorialPorFechasFiltra() {
+    @DisplayName("Filtrar por rango de fechas incluye ambos extremos")
+    void consultarHistorialPorFechasIncluyeAmbosExtremos() {
         List<HistorialPruebaDTO> octubreNoviembre = servicio.consultarHistorialPorFechas(
                 "PAC-001", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 11, 5));
 
-        assertEquals(2, octubreNoviembre.size());
-        assertEquals("REG-002", octubreNoviembre.get(0).getRegistroId());
-        assertEquals("REG-003", octubreNoviembre.get(1).getRegistroId());
+        assertAll(
+                () -> assertEquals(2, octubreNoviembre.size()),
+                () -> assertEquals("REG-002", octubreNoviembre.get(0).getRegistroId()),
+                () -> assertEquals("REG-003", octubreNoviembre.get(1).getRegistroId()));
     }
 
     @Test
-    @DisplayName("El filtro por fechas rechaza fechas nulas o un rango invertido")
-    void consultarHistorialPorFechasInvalidasLanzaExcepcion() {
+    @DisplayName("Un rango de un solo día (inicio igual a fin) es válido")
+    void consultarHistorialPorFechasDeUnSoloDiaEsValido() {
+        LocalDate dia = LocalDate.of(2026, 11, 5);
+
+        List<HistorialPruebaDTO> resultado = servicio.consultarHistorialPorFechas("PAC-001", dia, dia);
+
+        assertEquals(1, resultado.size());
+    }
+
+    @Test
+    @DisplayName("Un rango sin pruebas devuelve una lista vacía")
+    void consultarHistorialPorFechasSinPruebasDevuelveListaVacia() {
+        List<HistorialPruebaDTO> resultado = servicio.consultarHistorialPorFechas(
+                "PAC-001", LocalDate.of(2025, 1, 1), LocalDate.of(2025, 12, 31));
+
+        assertTrue(resultado.isEmpty());
+    }
+
+    @Test
+    @DisplayName("Filtrar sin fecha de inicio o sin fecha de fin lanza excepción")
+    void consultarHistorialPorFechasNulasLanzaExcepcion() {
         LocalDate hoy = LocalDate.of(2026, 11, 23);
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarHistorialPorFechas("PAC-001", null, hoy));
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarHistorialPorFechas("PAC-001", hoy, null));
-        assertThrows(IllegalArgumentException.class,
-                () -> servicio.consultarHistorialPorFechas("PAC-001", hoy, hoy.minusDays(1)));
+        String mensaje = "Las fechas de inicio y fin son obligatorias";
+
+        assertAll(
+                () -> assertEquals(mensaje, assertThrows(IllegalArgumentException.class,
+                        () -> servicio.consultarHistorialPorFechas("PAC-001", null, hoy)).getMessage()),
+                () -> assertEquals(mensaje, assertThrows(IllegalArgumentException.class,
+                        () -> servicio.consultarHistorialPorFechas("PAC-001", hoy, null)).getMessage()));
     }
 
-    // ---------- Detalle ----------
+    @Test
+    @DisplayName("Un rango invertido (fin un día antes que el inicio) lanza excepción")
+    void consultarHistorialPorFechasInvertidasLanzaExcepcion() {
+        LocalDate hoy = LocalDate.of(2026, 11, 23);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> servicio.consultarHistorialPorFechas("PAC-001", hoy, hoy.minusDays(1)));
+
+        assertEquals("La fecha de inicio no puede ser posterior a la fecha de fin", e.getMessage());
+    }
+
+    // ---------------------------------------------------------------- consultarDetallePrueba
 
     @Test
-    @DisplayName("Devuelve el detalle de una prueba propia del paciente")
-    void consultarDetallePruebaPropia() {
+    @DisplayName("Devuelve el detalle de una prueba propia del paciente y lo audita")
+    void consultarDetallePruebaPropiaLaDevuelveYLaAudita() {
         HistorialPruebaDTO detalle = servicio.consultarDetallePrueba("REG-002", "PAC-001");
 
-        assertEquals("TAC Abdominal", detalle.getTipoPrueba());
-        assertEquals("MED-010", detalle.getMedicoId());
-        assertTrue(detalle.isTieneEstudioImagen());
-        assertEquals("CONSULTAR_DETALLE_HISTORIAL:REG-002", eventosAuditoria.get(0).getAccion());
+        assertAll(
+                () -> assertEquals("TAC Abdominal", detalle.getTipoPrueba()),
+                () -> assertEquals("MED-010", detalle.getMedicoId()),
+                () -> assertTrue(detalle.isTieneEstudioImagen()),
+                () -> assertEquals("CONSULTAR_DETALLE_HISTORIAL:REG-002", eventosAuditoria.get(0).getAccion()));
     }
 
     @Test
-    @DisplayName("Deniega el acceso a una prueba de otro paciente y lo audita")
-    void consultarDetallePruebaAjenaLanzaSecurityException() {
-        assertThrows(SecurityException.class, () -> servicio.consultarDetallePrueba("REG-999", "PAC-001"));
+    @DisplayName("Deniega el acceso a una prueba de otro paciente y lo audita como denegado")
+    void consultarDetallePruebaAjenaLanzaSecurityExceptionYAudita() {
+        SecurityException e = assertThrows(SecurityException.class,
+                () -> servicio.consultarDetallePrueba("REG-999", "PAC-001"));
 
-        assertEquals(1, eventosAuditoria.size());
-        assertFalse(eventosAuditoria.get(0).isExito());
-        assertEquals("ACCESO_DENEGADO_HISTORIAL:REG-999", eventosAuditoria.get(0).getAccion());
+        assertAll(
+                () -> assertEquals("Acceso denegado: la prueba no pertenece al paciente", e.getMessage()),
+                () -> assertEquals(1, eventosAuditoria.size()),
+                () -> assertFalse(eventosAuditoria.get(0).isExito()),
+                () -> assertEquals("ACCESO_DENEGADO_HISTORIAL:REG-999", eventosAuditoria.get(0).getAccion()));
     }
 
-    @Test
-    @DisplayName("El detalle exige identificador de registro y de paciente")
-    void consultarDetallePruebaConParametrosInvalidosLanzaExcepcion() {
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarDetallePrueba(null, "PAC-001"));
-        assertThrows(IllegalArgumentException.class, () -> servicio.consultarDetallePrueba("REG-001", " "));
+    @ParameterizedTest(name = "registro [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    @DisplayName("El detalle con identificador de registro nulo, vacío o en blanco lanza excepción")
+    void consultarDetallePruebaConRegistroInvalidoLanzaExcepcion(String registroId) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> servicio.consultarDetallePrueba(registroId, "PAC-001"));
+
+        assertEquals("El identificador del registro es obligatorio", e.getMessage());
+    }
+
+    @ParameterizedTest(name = "paciente [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    @DisplayName("El detalle con paciente nulo, vacío o en blanco lanza excepción")
+    void consultarDetallePruebaConPacienteInvalidoLanzaExcepcion(String paciente) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> servicio.consultarDetallePrueba("REG-001", paciente));
+
+        assertEquals(MSG_PACIENTE, e.getMessage());
     }
 
     @Test
     @DisplayName("Una prueba inexistente propaga IllegalStateException")
-    void consultarDetallePruebaInexistente() {
-        assertThrows(IllegalStateException.class, () -> servicio.consultarDetallePrueba("REG-404", "PAC-001"));
+    void consultarDetallePruebaInexistenteLanzaExcepcion() {
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> servicio.consultarDetallePrueba("REG-404", "PAC-001"));
+
+        assertEquals("No existe ningún registro de prueba con ID: REG-404", e.getMessage());
     }
 }
