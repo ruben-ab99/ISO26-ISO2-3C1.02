@@ -10,4 +10,9 @@ public interface IPrescripcionSeguimientoService {
     PrescripcionSeguimientoDTO consultarSeguimiento(String seguimientoId);
     List<PrescripcionSeguimientoDTO> listarSeguimientosPaciente(String pacienteId);
     PrescripcionSeguimientoDTO cancelarSeguimiento(String seguimientoId, String motivo);
+
+    // Consulta de solo lectura para la adherencia al seguimiento de CU-11 (ADR-017).
+    default List<PrescripcionSeguimientoDTO> listarSeguimientosMedico(String medicoId) {
+        return List.of();
+    }
 }
