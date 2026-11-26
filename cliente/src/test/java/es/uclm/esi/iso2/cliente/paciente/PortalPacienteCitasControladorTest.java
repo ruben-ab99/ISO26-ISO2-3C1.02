@@ -1,5 +1,6 @@
 package es.uclm.esi.iso2.cliente.paciente;
 
+import es.uclm.esi.iso2.cliente.paciente.PortalPacienteCitasControlador;
 import es.uclm.sescam.contratos.agendas.TramoHorarioDTO;
 import es.uclm.sescam.contratos.citacion.CitaDTO;
 import es.uclm.sescam.contratos.citacion.IGestorCitasPacienteService;
