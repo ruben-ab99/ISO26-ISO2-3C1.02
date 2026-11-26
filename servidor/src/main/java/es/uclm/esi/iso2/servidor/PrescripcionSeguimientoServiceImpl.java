@@ -193,4 +193,19 @@ public class PrescripcionSeguimientoServiceImpl implements IPrescripcionSeguimie
             auditService.registrarEvento(actor, accion, exito, "127.0.0.1");
         }
     }
+
+    @Override
+    public List<PrescripcionSeguimientoDTO> listarSeguimientosMedico(String medicoId) {
+        if (medicoId == null || medicoId.isBlank()) {
+            throw new IllegalArgumentException("El identificador del médico es obligatorio");
+        }
+        String medicoBuscado = medicoId.trim();
+        List<PrescripcionSeguimientoDTO> resultado = new ArrayList<>();
+        for (PrescripcionSeguimientoDTO seguimiento : repositorioSeguimientos.values()) {
+            if (seguimiento.getMedicoId() != null && seguimiento.getMedicoId().equals(medicoBuscado)) {
+                resultado.add(seguimiento);
+            }
+        }
+        return resultado;
+    }
 }
