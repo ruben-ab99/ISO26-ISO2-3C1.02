@@ -10,4 +10,8 @@ public interface IPrescripcionSeguimientoService {
     PrescripcionSeguimientoDTO consultarSeguimiento(String seguimientoId);
     List<PrescripcionSeguimientoDTO> listarSeguimientosPaciente(String pacienteId);
     PrescripcionSeguimientoDTO cancelarSeguimiento(String seguimientoId, String motivo);
+
+    default List<PrescripcionSeguimientoDTO> listarSeguimientosMedico(String medicoId) {
+        return List.of();
+    }
 }

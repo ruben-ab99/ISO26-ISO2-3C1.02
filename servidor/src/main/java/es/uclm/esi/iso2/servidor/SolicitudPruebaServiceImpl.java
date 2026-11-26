@@ -126,4 +126,19 @@ public class SolicitudPruebaServiceImpl implements ISolicitudPruebaService {
         }
         return "ORDINARIA";
     }
+
+    @Override
+    public List<SolicitudPruebaDTO> listarSolicitudesMedico(String medicoId) {
+        if (medicoId == null || medicoId.isBlank()) {
+            throw new IllegalArgumentException("El identificador del médico es obligatorio");
+        }
+        String medicoBuscado = medicoId.trim();
+        List<SolicitudPruebaDTO> resultado = new ArrayList<>();
+        for (SolicitudPruebaDTO solicitud : repositorioSolicitudes.values()) {
+            if (solicitud.getMedicoId() != null && solicitud.getMedicoId().equals(medicoBuscado)) {
+                resultado.add(solicitud);
+            }
+        }
+        return resultado;
+    }
 }
