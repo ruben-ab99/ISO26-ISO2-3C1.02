@@ -384,3 +384,56 @@ Inyectar por constructor las interfaces `ICatalogoPruebasService` e `IGestionCit
 ### 🚀 Motivo y Consecuencias
 - **Motivo:** Mantiene el desacoplamiento entre dominios exigido por CU-29 (ADR-002), permite probar el servicio de forma aislada con stubs/implementaciones en memoria (ADR-012) y garantiza consistencia clínica entre seguimientos y citas.
 - **Consecuencias:** La programación de un seguimiento valida previamente que la prueba exista y esté activa en el catálogo (CU-24) y requiere disponibilidad horaria para cada fecha calculada.
+
+---
+
+## 📌 ADR-017: Consultas de solo lectura como métodos `default` en contratos de otros dominios (CU-11, CU-16)
+
+- **Fecha:** 26/11/2026
+- **Iteración:** It7
+- **Origen / Trazabilidad:** CU-11 · CU-16 · ADR-002 · ADR-012
+- **Estado:** Propuesto
+
+### 🎯 Contexto y Problema
+Los informes de la It7 necesitan datos que hoy solo existen dentro de otros módulos: las citas y agendas de un periodo (CU-16, Generar informes operativos) y los seguimientos prescritos por un médico (CU-11, Consultar estadísticas de solicitudes). Los contratos `IGestionCitasService`, `IGestorAgendasService` e `IPrescripcionSeguimientoService` no exponen esas consultas, y añadir métodos abstractos rompería la compilación de todos los stubs que ya usan los tests de sus responsables.
+
+### 💡 Decisión Tomada
+Añadir a esos contratos tres consultas de solo lectura como métodos `default` que devuelven `List.of()`: `listarCitasEntreFechas(desde, hasta)`, `listarAgendasEntreFechas(desde, hasta, tokenSSO)` y `listarSeguimientosMedico(medicoId)`. Las implementaciones reales (`GestionCitasServiceImpl`, `GestorAgendasServiceImpl`, `PrescripcionSeguimientoServiceImpl`) las sobrescriben filtrando sus datos en memoria, con tests propios (`ConsultasPeriodoCitasAgendasTest`, `ConsultaSeguimientosMedicoTest`). Los servicios de analítica solo dependen de las interfaces.
+
+### 🔄 Alternativas Valoradas
+1. Declarar los métodos como abstractos y actualizar todos los stubs de los tests de otros compañeros.
+2. Acceder directamente a las implementaciones o a sus estructuras internas desde los servicios de analítica.
+3. Duplicar en el módulo de analítica un almacenamiento propio de citas, agendas y seguimientos.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Mantiene el desacoplamiento por interfaces (ADR-002) y la compatibilidad con los stubs existentes (ADR-012) sin tocar los tests de otros casos de uso.
+- **Consecuencias:** Un stub que no sobrescriba la consulta devuelve una lista vacía, por lo que el informe sale a cero en lugar de fallar. Los responsables de citación, agendas y prescripciones deben mantener estas consultas si cambian su almacenamiento.
+
+---
+
+## 📌 ADR-018: Criterios de cálculo de las métricas de analítica (CU-11, CU-16, CU-21)
+
+- **Fecha:** 26/11/2026
+- **Iteración:** It7
+- **Origen / Trazabilidad:** CU-11 · CU-16 · CU-21 · ADR-017
+- **Estado:** Propuesto
+
+### 🎯 Contexto y Problema
+Los informes de analítica calculan medias, porcentajes y tiempos de espera a partir de datos incompletos (solicitudes sin cita, agendas sin tramos, periodos vacíos). Sin un criterio común cada servicio podría dividir entre cero, mezclar unidades o devolver valores distintos para la misma situación, y los tests no tendrían un resultado esperado claro.
+
+### 💡 Decisión Tomada
+- **Redondeo y vacíos:** porcentajes y medias se redondean a dos decimales; si no hay elementos el resultado es `0.0`. Los tiempos se miden en días naturales con `LocalDate` y un `Clock` inyectado.
+- **Espera hasta cita (CU-11):** a cada solicitud no cancelada se le asigna, por orden de fecha de solicitud, la primera cita no cancelada del mismo paciente y prueba con fecha igual o posterior, sin reutilizar citas. Las solicitudes sin cita cuentan aparte con los días transcurridos hasta hoy.
+- **Adherencia al seguimiento (CU-11):** revisiones realizadas / revisiones vencidas (citas no canceladas con fecha ≤ hoy), comprobando la realización en los registros de pruebas. Sin revisiones vencidas la adherencia es del 100 %, porque no hay ninguna incumplida.
+- **Ocupación (CU-16):** tramos no disponibles / tramos totales de las agendas del periodo, global y por médico. La espera se mide sobre las solicitudes no atendidas de la lista de espera, y la cancelación como citas canceladas / citas del periodo.
+- **Estadísticas globales (CU-21):** se calculan a partir del registro de auditoría y del catálogo, y se exportan en CSV con separador `;` y columnas `seccion;clave;valor`.
+- **Errores de colaboradores (CU-11):** las excepciones de datos (`IllegalArgumentException`, `IllegalStateException`) de otros servicios no invalidan el informe y ese dato se omite; las `SecurityException` sí se propagan.
+
+### 🔄 Alternativas Valoradas
+1. Devolver `NaN` o lanzar excepción cuando no hay datos.
+2. Considerar 0 % de adherencia cuando aún no ha vencido ninguna revisión.
+3. Abortar el informe completo ante cualquier error de un servicio colaborador.
+
+### 🚀 Motivo y Consecuencias
+- **Motivo:** Da resultados deterministas y comparables entre informes y permite fijar en los tests valores exactos con un reloj controlado.
+- **Consecuencias:** Un informe puede mostrar ceros cuando faltan datos, por lo que debe leerse junto a sus contadores (`totalTramos`, `revisionesVencidas`, etc.). Cualquier cambio de criterio exige actualizar este ADR y los tests asociados.
