@@ -149,6 +149,26 @@ public class GestionCitasServiceImpl implements IGestionCitasService {
     }
 
     @Override
+    public List<CitaDTO> listarCitasEntreFechas(LocalDate desde, LocalDate hasta) {
+        if (tokenSSO == null || tokenSSO.isBlank()) {
+            throw new SecurityException("Token de sesión obligatorio para listar citas");
+        }
+        if (desde == null || hasta == null) {
+            throw new IllegalArgumentException("Las fechas de inicio y fin son obligatorias");
+        }
+        if (desde.isAfter(hasta)) {
+            throw new IllegalArgumentException("La fecha de inicio no puede ser posterior a la de fin");
+        }
+        List<CitaDTO> resultado = new ArrayList<>();
+        for (CitaDTO cita : repositorioCitas.values()) {
+            if (cita.getFecha() != null && !cita.getFecha().isBefore(desde) && !cita.getFecha().isAfter(hasta)) {
+                resultado.add(cita);
+            }
+        }
+        return resultado;
+    }
+
+    @Override
     public CitaDTO reprogramarCita(String citaId, LocalDate nuevaFecha, String nuevaFranja) {
         verificarPermisoGestionCitas();
 
