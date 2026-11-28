@@ -4,11 +4,13 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
 
 import es.uclm.sescam.contratos.agendas.AgendaDiariaDTO;
@@ -19,7 +21,19 @@ import es.uclm.sescam.contratos.listasespera.SolicitudEsperaDTO;
 import es.uclm.sescam.contratos.roles.IGestorRolesService;
 import es.uclm.sescam.contratos.roles.Rol;
 
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Pruebas de CU-15 (Gestionar listas de espera y huecos libres).
+ * Técnicas: clases de equivalencia (token con / sin permiso, datos válidos / nulos / en blanco,
+ * solicitud pendiente / atendida / inexistente, agenda abierta / cerrada), criterio each use
+ * entre parámetros y conjetura de errores (duplicados con otra capitalización, orden por
+ * prioridad y antigüedad). Los servicios de roles y agendas se sustituyen por stubs (ADR-012).
+ */
 class GestorListasEsperaServiceImplTest {
+
+    private static final String TOKEN_ADMISION = "token-ADMISION";
+    private static final LocalDate FECHA = LocalDate.of(2026, 12, 1);
 
     private GestorListasEsperaServiceImpl servicio;
     private boolean agendaAbiertaStub;
@@ -79,110 +93,374 @@ class GestorListasEsperaServiceImplTest {
         servicio = new GestorListasEsperaServiceImpl(stubRoles, stubAgendas);
     }
 
+    private SolicitudEsperaDTO registrar(String paciente, String prueba, PrioridadEspera prioridad) {
+        return servicio.registrarEnListaEspera(paciente, prueba, prioridad, TOKEN_ADMISION);
+    }
+
+    // ---------------------------------------------------------------- constructor y permisos
+
+    @ParameterizedTest(name = "sin roles={0}")
+    @ValueSource(booleans = {true, false})
+    @DisplayName("El constructor rechaza un servicio de roles o de agendas nulo")
+    void constructorConColaboradorNuloLanzaExcepcion(boolean sinRoles) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
+                new GestorListasEsperaServiceImpl(sinRoles ? null : stubRoles, sinRoles ? stubAgendas : null));
+
+        assertEquals("Los servicios de roles y agendas son obligatorios", e.getMessage());
+    }
+
+    @ParameterizedTest(name = "el token {0} puede gestionar la lista de espera")
+    @ValueSource(strings = {"token-ADMISION", "token-ADMINISTRADOR"})
+    @DisplayName("Los roles ADMISION y ADMINISTRADOR pueden gestionar la lista de espera")
+    void registrarConRolPermitidoLoRegistra(String token) {
+        assertNotNull(servicio.registrarEnListaEspera("PAC-01", "RM", PrioridadEspera.ORDINARIA, token));
+    }
+
+    @ParameterizedTest(name = "token [{0}] no está informado")
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    @DisplayName("Sin token SSO se deniega cualquier operación de la lista de espera")
+    void gestionarListaSinTokenLanzaSecurityException(String token) {
+        SecurityException e = assertThrows(SecurityException.class,
+                () -> servicio.registrarEnListaEspera("PAC-01", "RM", PrioridadEspera.URGENTE, token));
+
+        assertEquals("Token SSO obligatorio", e.getMessage());
+    }
+
+    @ParameterizedTest(name = "el token {0} no tiene permiso")
+    @ValueSource(strings = {"token-MEDICO", "token-PACIENTE", "token-INVALIDO"})
+    @DisplayName("Sin rol ADMISION ni ADMINISTRADOR se deniegan todas las operaciones")
+    void gestionarListaSinPermisoLanzaSecurityException(String token) {
+        SolicitudEsperaDTO existente = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+
+        assertAll(
+                () -> assertEquals("Acceso denegado: se requiere rol ADMISION o ADMINISTRADOR",
+                        assertThrows(SecurityException.class, () ->
+                                servicio.registrarEnListaEspera("PAC-02", "RM", PrioridadEspera.URGENTE, token)).getMessage()),
+                () -> assertThrows(SecurityException.class, () -> servicio.consultarListaEspera("RM", token)),
+                () -> assertThrows(SecurityException.class, () ->
+                        servicio.actualizarPrioridad(existente.getSolicitudId(), PrioridadEspera.ORDINARIA, token)),
+                () -> assertThrows(SecurityException.class, () -> servicio.contarHuecosLibres("MED-01", FECHA, token)),
+                () -> assertThrows(SecurityException.class, () -> servicio.asignarHuecoLibre(
+                        existente.getSolicitudId(), "MED-01", FECHA, LocalTime.of(9, 0), LocalTime.of(9, 20), token)));
+    }
+
+    // ---------------------------------------------------------------- registrarEnListaEspera
+
     @Test
-    void constructorNuloLanzaExcepcion() {
-        assertThrows(IllegalArgumentException.class, () -> new GestorListasEsperaServiceImpl(null, stubAgendas));
-        assertThrows(IllegalArgumentException.class, () -> new GestorListasEsperaServiceImpl(stubRoles, null));
+    @DisplayName("Registrar una solicitud válida la deja pendiente y sin espacios sobrantes")
+    void registrarSolicitudValidaLaDejaPendiente() {
+        SolicitudEsperaDTO solicitud = registrar("  PAC-01 ", " RM ", PrioridadEspera.PREFERENTE);
+
+        assertAll(
+                () -> assertTrue(solicitud.getSolicitudId().startsWith("ESP-")),
+                () -> assertEquals("PAC-01", solicitud.getPacienteId()),
+                () -> assertEquals("RM", solicitud.getTipoPrueba()),
+                () -> assertEquals(PrioridadEspera.PREFERENTE, solicitud.getPrioridad()),
+                () -> assertFalse(solicitud.isAtendida()),
+                () -> assertNotNull(solicitud.getFechaRegistro()));
+    }
+
+    @ParameterizedTest(name = "paciente [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {"  "})
+    @DisplayName("Registrar con paciente nulo, vacío o en blanco lanza excepción")
+    void registrarConPacienteInvalidoLanzaExcepcion(String paciente) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> registrar(paciente, "RM", PrioridadEspera.URGENTE));
+
+        assertEquals("El identificador del paciente es obligatorio", e.getMessage());
+    }
+
+    @ParameterizedTest(name = "tipo de prueba [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {"  "})
+    @DisplayName("Registrar con tipo de prueba nulo, vacío o en blanco lanza excepción")
+    void registrarConTipoPruebaInvalidoLanzaExcepcion(String tipoPrueba) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> registrar("PAC-01", tipoPrueba, PrioridadEspera.URGENTE));
+
+        assertEquals("El tipo de prueba es obligatorio", e.getMessage());
     }
 
     @Test
-    void registrarYOrdenarPorPrioridadCorrectamente() {
-        SolicitudEsperaDTO s1 = servicio.registrarEnListaEspera("PAC-01", "TAC", PrioridadEspera.ORDINARIA, "token-ADMISION");
-        SolicitudEsperaDTO s2 = servicio.registrarEnListaEspera("PAC-02", "TAC", PrioridadEspera.URGENTE, "token-ADMISION");
-        SolicitudEsperaDTO s3 = servicio.registrarEnListaEspera("PAC-03", "TAC", PrioridadEspera.PREFERENTE, "token-ADMINISTRADOR");
-        servicio.registrarEnListaEspera("PAC-04", "RMN", PrioridadEspera.URGENTE, "token-ADMISION");
+    @DisplayName("Registrar sin prioridad lanza excepción")
+    void registrarSinPrioridadLanzaExcepcion() {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> registrar("PAC-01", "RM", null));
 
-        assertTrue(s1.getSolicitudId().startsWith("ESP-"));
-        assertFalse(s1.isAtendida());
+        assertEquals("La prioridad es obligatoria", e.getMessage());
+    }
 
-        List<SolicitudEsperaDTO> colaTac = servicio.consultarListaEspera("TAC", "token-ADMISION");
-        assertEquals(3, colaTac.size());
-        assertEquals("PAC-02", colaTac.get(0).getPacienteId()); // URGENTE primero
-        assertEquals("PAC-03", colaTac.get(1).getPacienteId()); // PREFERENTE segundo
-        assertEquals("PAC-01", colaTac.get(2).getPacienteId()); // ORDINARIA tercero
+    @ParameterizedTest(name = "duplicado como {0} / {1}")
+    @CsvSource({
+            "PAC-01, RM",
+            "pac-01, rm",
+            "' PAC-01 ', ' RM '"
+    })
+    @DisplayName("Un paciente no puede tener dos solicitudes pendientes de la misma prueba (sin distinguir mayúsculas)")
+    void registrarDuplicadoLanzaExcepcion(String paciente, String prueba) {
+        registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
 
-        // Consulta global sin filtro de prueba
-        assertEquals(4, servicio.consultarListaEspera(null, "token-ADMISION").size());
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> registrar(paciente, prueba, PrioridadEspera.ORDINARIA));
+
+        assertEquals("El paciente ya tiene una solicitud pendiente para esa prueba", e.getMessage());
     }
 
     @Test
-    void validacionesPermisosYDuplicados() {
-        assertThrows(SecurityException.class, () ->
-                servicio.registrarEnListaEspera("PAC-01", "ECO", PrioridadEspera.ORDINARIA, "token-MEDICO"));
-        assertThrows(SecurityException.class, () ->
-                servicio.consultarListaEspera("ECO", ""));
+    @DisplayName("El mismo paciente sí puede esperar una prueba distinta")
+    void registrarOtraPruebaDelMismoPacienteEsValido() {
+        registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
 
-        assertThrows(IllegalArgumentException.class, () ->
-                servicio.registrarEnListaEspera("", "ECO", PrioridadEspera.ORDINARIA, "token-ADMISION"));
-        assertThrows(IllegalArgumentException.class, () ->
-                servicio.registrarEnListaEspera("PAC-01", null, PrioridadEspera.ORDINARIA, "token-ADMISION"));
-        assertThrows(IllegalArgumentException.class, () ->
-                servicio.registrarEnListaEspera("PAC-01", "ECO", null, "token-ADMISION"));
+        assertDoesNotThrow(() -> registrar("PAC-01", "TAC", PrioridadEspera.URGENTE));
+    }
 
-        servicio.registrarEnListaEspera("PAC-01", "ECO", PrioridadEspera.ORDINARIA, "token-ADMISION");
-        assertThrows(IllegalStateException.class, () ->
-                servicio.registrarEnListaEspera("PAC-01", "ECO", PrioridadEspera.URGENTE, "token-ADMISION"));
+    // ---------------------------------------------------------------- consultarListaEspera
+
+    @Test
+    @DisplayName("La lista se ordena por prioridad y, a igual prioridad, por antigüedad")
+    void consultarListaEsperaOrdenaPorPrioridadYAntiguedad() {
+        SolicitudEsperaDTO ordinaria = registrar("PAC-01", "RM", PrioridadEspera.ORDINARIA);
+        SolicitudEsperaDTO urgente = registrar("PAC-02", "RM", PrioridadEspera.URGENTE);
+        SolicitudEsperaDTO preferente = registrar("PAC-03", "RM", PrioridadEspera.PREFERENTE);
+
+        List<SolicitudEsperaDTO> lista = servicio.consultarListaEspera("RM", TOKEN_ADMISION);
+
+        assertAll(
+                () -> assertEquals(3, lista.size()),
+                () -> assertEquals(urgente.getSolicitudId(), lista.get(0).getSolicitudId()),
+                () -> assertEquals(preferente.getSolicitudId(), lista.get(1).getSolicitudId()),
+                () -> assertEquals(ordinaria.getSolicitudId(), lista.get(2).getSolicitudId()));
     }
 
     @Test
-    void actualizarPrioridadFuncionaYValidaEstados() {
-        SolicitudEsperaDTO sol = servicio.registrarEnListaEspera("PAC-10", "RX", PrioridadEspera.ORDINARIA, "token-ADMISION");
+    @DisplayName("Filtrar por tipo de prueba devuelve solo las solicitudes de ese tipo")
+    void consultarListaEsperaFiltraPorTipoDePrueba() {
+        registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+        registrar("PAC-02", "TAC", PrioridadEspera.URGENTE);
 
-        assertTrue(servicio.actualizarPrioridad(sol.getSolicitudId(), PrioridadEspera.URGENTE, "token-ADMISION"));
-        assertEquals(PrioridadEspera.URGENTE, sol.getPrioridad());
-        assertFalse(servicio.actualizarPrioridad(sol.getSolicitudId(), PrioridadEspera.URGENTE, "token-ADMISION"));
+        assertEquals(1, servicio.consultarListaEspera("rm", TOKEN_ADMISION).size());
+    }
 
-        assertThrows(IllegalArgumentException.class, () ->
-                servicio.actualizarPrioridad("", PrioridadEspera.PREFERENTE, "token-ADMISION"));
-        assertThrows(IllegalStateException.class, () ->
-                servicio.actualizarPrioridad("ESP-NOEXISTE", PrioridadEspera.PREFERENTE, "token-ADMISION"));
+    @ParameterizedTest(name = "filtro [{0}] devuelve todas")
+    @NullAndEmptySource
+    @ValueSource(strings = {"  "})
+    @DisplayName("Sin filtro de tipo se devuelven todas las solicitudes pendientes")
+    void consultarListaEsperaSinFiltroDevuelveTodas(String tipoPrueba) {
+        registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+        registrar("PAC-02", "TAC", PrioridadEspera.URGENTE);
+
+        assertEquals(2, servicio.consultarListaEspera(tipoPrueba, TOKEN_ADMISION).size());
+    }
+
+    // ---------------------------------------------------------------- actualizarPrioridad
+
+    @ParameterizedTest(name = "de ORDINARIA a {0} se actualiza")
+    @EnumSource(value = PrioridadEspera.class, names = {"URGENTE", "PREFERENTE"})
+    @DisplayName("Cambiar a una prioridad distinta actualiza la solicitud")
+    void actualizarPrioridadDistintaLaActualiza(PrioridadEspera nueva) {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.ORDINARIA);
+
+        boolean actualizada = servicio.actualizarPrioridad(solicitud.getSolicitudId(), nueva, TOKEN_ADMISION);
+
+        assertAll(
+                () -> assertTrue(actualizada),
+                () -> assertEquals(nueva, solicitud.getPrioridad()));
     }
 
     @Test
-    void asignarHuecoLibreYContarHuecos() {
-        LocalDate fecha = LocalDate.of(2026, 11, 25);
-        SolicitudEsperaDTO sol = servicio.registrarEnListaEspera("PAC-20", "RMN", PrioridadEspera.PREFERENTE, "token-ADMISION");
+    @DisplayName("Cambiar a la misma prioridad devuelve false")
+    void actualizarPrioridadIgualDevuelveFalse() {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
 
-        // Conteo con tramos nulos y con tramos mixtos (2 libres, 1 ocupado)
-        assertEquals(0, servicio.contarHuecosLibres("MED-01", fecha, "token-ADMISION"));
+        assertFalse(servicio.actualizarPrioridad(solicitud.getSolicitudId(), PrioridadEspera.URGENTE, TOKEN_ADMISION));
+    }
+
+    @Test
+    @DisplayName("Cambiar la prioridad de una solicitud ya atendida devuelve false")
+    void actualizarPrioridadDeSolicitudAtendidaDevuelveFalse() {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+        servicio.asignarHuecoLibre(solicitud.getSolicitudId(), "MED-01", FECHA,
+                LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION);
+
+        assertFalse(servicio.actualizarPrioridad(solicitud.getSolicitudId(), PrioridadEspera.ORDINARIA, TOKEN_ADMISION));
+    }
+
+    @ParameterizedTest(name = "solicitud [{0}] no es válida")
+    @NullAndEmptySource
+    @ValueSource(strings = {"  "})
+    @DisplayName("Actualizar con identificador nulo, vacío o en blanco lanza excepción")
+    void actualizarPrioridadConIdInvalidoLanzaExcepcion(String solicitudId) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> servicio.actualizarPrioridad(solicitudId, PrioridadEspera.URGENTE, TOKEN_ADMISION));
+
+        assertEquals("Identificador de solicitud y nueva prioridad obligatorios", e.getMessage());
+    }
+
+    @Test
+    @DisplayName("Actualizar sin nueva prioridad lanza excepción")
+    void actualizarPrioridadSinPrioridadLanzaExcepcion() {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> servicio.actualizarPrioridad(solicitud.getSolicitudId(), null, TOKEN_ADMISION));
+
+        assertEquals("Identificador de solicitud y nueva prioridad obligatorios", e.getMessage());
+    }
+
+    @Test
+    @DisplayName("Actualizar una solicitud inexistente lanza excepción")
+    void actualizarPrioridadInexistenteLanzaExcepcion() {
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> servicio.actualizarPrioridad("ESP-NO-EXISTE", PrioridadEspera.URGENTE, TOKEN_ADMISION));
+
+        assertEquals("No existe la solicitud indicada", e.getMessage());
+    }
+
+    // ---------------------------------------------------------------- contarHuecosLibres
+
+    @Test
+    @DisplayName("Contar huecos libres devuelve solo los tramos disponibles de una agenda abierta")
+    void contarHuecosLibresCuentaSoloLosDisponibles() {
         tramosStub = List.of(
-                new TramoHorarioDTO(LocalTime.of(9, 0), LocalTime.of(9, 20), true, null),
-                new TramoHorarioDTO(LocalTime.of(9, 20), LocalTime.of(9, 40), false, "Ocupado"),
-                new TramoHorarioDTO(LocalTime.of(9, 40), LocalTime.of(10, 0), true, null)
-        );
-        assertEquals(2, servicio.contarHuecosLibres("MED-01", fecha, "token-ADMISION"));
+                new TramoHorarioDTO(LocalTime.of(9, 0), LocalTime.of(9, 20), true, ""),
+                new TramoHorarioDTO(LocalTime.of(9, 20), LocalTime.of(9, 40), false, "Bloqueado"),
+                new TramoHorarioDTO(LocalTime.of(9, 40), LocalTime.of(10, 0), true, ""));
 
-        // Validaciones de parámetros y estado de agenda
-        assertThrows(IllegalArgumentException.class, () ->
-                servicio.asignarHuecoLibre("", "MED-01", fecha, LocalTime.of(9, 0), LocalTime.of(9, 20), "token-ADMISION"));
-        assertThrows(IllegalStateException.class, () ->
-                servicio.asignarHuecoLibre("ESP-FALSO", "MED-01", fecha, LocalTime.of(9, 0), LocalTime.of(9, 20), "token-ADMISION"));
+        assertEquals(2, servicio.contarHuecosLibres("MED-01", FECHA, TOKEN_ADMISION));
+    }
 
-        bloquearExitosoStub = false;
-        assertThrows(IllegalStateException.class, () ->
-                servicio.asignarHuecoLibre(sol.getSolicitudId(), "MED-01", fecha, LocalTime.of(9, 0), LocalTime.of(9, 20), "token-ADMISION"));
-
+    @Test
+    @DisplayName("Una agenda cerrada no tiene huecos libres")
+    void contarHuecosLibresConAgendaCerradaDevuelveCero() {
         agendaAbiertaStub = false;
-        assertEquals(0, servicio.contarHuecosLibres("MED-01", fecha, "token-ADMISION"));
-        assertThrows(IllegalStateException.class, () ->
-                servicio.asignarHuecoLibre(sol.getSolicitudId(), "MED-01", fecha, LocalTime.of(9, 0), LocalTime.of(9, 20), "token-ADMISION"));
+        tramosStub = List.of(new TramoHorarioDTO(LocalTime.of(9, 0), LocalTime.of(9, 20), true, ""));
 
-        // Asignación exitosa
-        agendaAbiertaStub = true;
-        bloquearExitosoStub = true;
-        SolicitudEsperaDTO asignada = servicio.asignarHuecoLibre(
-                sol.getSolicitudId(), "MED-01", fecha, LocalTime.of(9, 0), LocalTime.of(9, 20), "token-ADMISION"
-        );
+        assertEquals(0, servicio.contarHuecosLibres("MED-01", FECHA, TOKEN_ADMISION));
+    }
 
-        assertTrue(asignada.isAtendida());
-        assertEquals("AGD-TEST", asignada.getAgendaAsignadaId());
-        assertEquals(fecha, asignada.getFechaAsignada());
-        assertEquals(LocalTime.of(9, 0), asignada.getHoraAsignada());
-        assertTrue(servicio.consultarListaEspera("RMN", "token-ADMISION").isEmpty());
+    @Test
+    @DisplayName("Una agenda sin tramos no tiene huecos libres")
+    void contarHuecosLibresSinTramosDevuelveCero() {
+        tramosStub = null;
 
-        // Ya atendida no se puede reasignar ni cambiar prioridad
-        assertThrows(IllegalStateException.class, () ->
-                servicio.asignarHuecoLibre(sol.getSolicitudId(), "MED-01", fecha, LocalTime.of(9, 20), LocalTime.of(9, 40), "token-ADMISION"));
-        assertFalse(servicio.actualizarPrioridad(sol.getSolicitudId(), PrioridadEspera.ORDINARIA, "token-ADMISION"));
+        assertEquals(0, servicio.contarHuecosLibres("MED-01", FECHA, TOKEN_ADMISION));
+    }
+
+    // ---------------------------------------------------------------- asignarHuecoLibre
+
+    @Test
+    @DisplayName("Asignar un hueco libre atiende la solicitud y guarda agenda, fecha y hora")
+    void asignarHuecoLibreAtiendeLaSolicitud() {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+
+        SolicitudEsperaDTO asignada = servicio.asignarHuecoLibre(solicitud.getSolicitudId(), "MED-01", FECHA,
+                LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION);
+
+        assertAll(
+                () -> assertTrue(asignada.isAtendida()),
+                () -> assertEquals("AGD-TEST", asignada.getAgendaAsignadaId()),
+                () -> assertEquals(FECHA, asignada.getFechaAsignada()),
+                () -> assertEquals(LocalTime.of(9, 0), asignada.getHoraAsignada()));
+    }
+
+    @Test
+    @DisplayName("Una solicitud atendida desaparece de la lista de espera")
+    void asignarHuecoLibreLaQuitaDeLaLista() {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+        servicio.asignarHuecoLibre(solicitud.getSolicitudId(), "MED-01", FECHA,
+                LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION);
+
+        assertTrue(servicio.consultarListaEspera("RM", TOKEN_ADMISION).isEmpty());
+    }
+
+    @ParameterizedTest(name = "solicitud [{0}] no es válida")
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    @DisplayName("Asignar con solicitud nula, vacía o en blanco lanza excepción")
+    void asignarHuecoConSolicitudInvalidaLanzaExcepcion(String solicitudId) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> servicio.asignarHuecoLibre(
+                solicitudId, "MED-01", FECHA, LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION));
+
+        assertEquals("Datos de solicitud, médico, fecha y franja horaria obligatorios", e.getMessage());
+    }
+
+    @ParameterizedTest(name = "médico [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {" "})
+    @DisplayName("Asignar con médico nulo, vacío o en blanco lanza excepción")
+    void asignarHuecoConMedicoInvalidoLanzaExcepcion(String medico) {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () -> servicio.asignarHuecoLibre(
+                solicitud.getSolicitudId(), medico, FECHA, LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION));
+
+        assertEquals("Datos de solicitud, médico, fecha y franja horaria obligatorios", e.getMessage());
+    }
+
+    @Test
+    @DisplayName("Asignar sin fecha o sin horas lanza excepción")
+    void asignarHuecoConFechaOHorasNulasLanzaExcepcion() {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+        String id = solicitud.getSolicitudId();
+
+        assertAll(
+                () -> assertThrows(IllegalArgumentException.class, () -> servicio.asignarHuecoLibre(
+                        id, "MED-01", null, LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION)),
+                () -> assertThrows(IllegalArgumentException.class, () -> servicio.asignarHuecoLibre(
+                        id, "MED-01", FECHA, null, LocalTime.of(9, 20), TOKEN_ADMISION)),
+                () -> assertThrows(IllegalArgumentException.class, () -> servicio.asignarHuecoLibre(
+                        id, "MED-01", FECHA, LocalTime.of(9, 0), null, TOKEN_ADMISION)));
+    }
+
+    @Test
+    @DisplayName("Asignar una solicitud inexistente lanza excepción")
+    void asignarHuecoSolicitudInexistenteLanzaExcepcion() {
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> servicio.asignarHuecoLibre(
+                "ESP-NO-EXISTE", "MED-01", FECHA, LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION));
+
+        assertEquals("No existe la solicitud en lista de espera", e.getMessage());
+    }
+
+    @Test
+    @DisplayName("Asignar una solicitud ya atendida lanza excepción")
+    void asignarHuecoSolicitudYaAtendidaLanzaExcepcion() {
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+        servicio.asignarHuecoLibre(solicitud.getSolicitudId(), "MED-01", FECHA,
+                LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> servicio.asignarHuecoLibre(
+                solicitud.getSolicitudId(), "MED-01", FECHA, LocalTime.of(9, 20), LocalTime.of(9, 40), TOKEN_ADMISION));
+
+        assertEquals("La solicitud ya ha sido atendida", e.getMessage());
+    }
+
+    @Test
+    @DisplayName("Asignar en una agenda cerrada lanza excepción y no atiende la solicitud")
+    void asignarHuecoEnAgendaCerradaLanzaExcepcion() {
+        agendaAbiertaStub = false;
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> servicio.asignarHuecoLibre(
+                solicitud.getSolicitudId(), "MED-01", FECHA, LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION));
+
+        assertAll(
+                () -> assertEquals("La agenda del médico está cerrada para esa fecha", e.getMessage()),
+                () -> assertFalse(solicitud.isAtendida()));
+    }
+
+    @Test
+    @DisplayName("Asignar un hueco que no está libre lanza excepción y no atiende la solicitud")
+    void asignarHuecoNoLibreLanzaExcepcion() {
+        bloquearExitosoStub = false;
+        SolicitudEsperaDTO solicitud = registrar("PAC-01", "RM", PrioridadEspera.URGENTE);
+
+        IllegalStateException e = assertThrows(IllegalStateException.class, () -> servicio.asignarHuecoLibre(
+                solicitud.getSolicitudId(), "MED-01", FECHA, LocalTime.of(9, 0), LocalTime.of(9, 20), TOKEN_ADMISION));
+
+        assertAll(
+                () -> assertEquals("El hueco solicitado no está libre en la agenda", e.getMessage()),
+                () -> assertFalse(solicitud.isAtendida()));
     }
 }

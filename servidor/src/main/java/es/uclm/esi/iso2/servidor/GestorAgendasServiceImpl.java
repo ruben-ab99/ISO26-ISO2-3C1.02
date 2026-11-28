@@ -9,6 +9,7 @@ import es.uclm.sescam.contratos.roles.Rol;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +100,25 @@ public class GestorAgendasServiceImpl implements IGestorAgendasService {
                 .filter(a -> a.getMedicoId().equalsIgnoreCase(medicoId.trim()) && a.getFecha().equals(fecha))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("No existe agenda configurada para el médico " + medicoId + " en fecha " + fecha));
+    }
+
+    @Override
+    public List<AgendaDiariaDTO> listarAgendasEntreFechas(LocalDate desde, LocalDate hasta, String tokenSSO) {
+        verificarPermisoAgenda(tokenSSO);
+        if (desde == null || hasta == null) {
+            throw new IllegalArgumentException("Las fechas de inicio y fin son obligatorias");
+        }
+        if (desde.isAfter(hasta)) {
+            throw new IllegalArgumentException("La fecha de inicio no puede ser posterior a la de fin");
+        }
+        List<AgendaDiariaDTO> resultado = new ArrayList<>();
+        for (AgendaDiariaDTO agenda : agendas.values()) {
+            if (!agenda.getFecha().isBefore(desde) && !agenda.getFecha().isAfter(hasta)) {
+                resultado.add(agenda);
+            }
+        }
+        resultado.sort(Comparator.comparing(AgendaDiariaDTO::getFecha).thenComparing(AgendaDiariaDTO::getMedicoId));
+        return resultado;
     }
 
     @Override

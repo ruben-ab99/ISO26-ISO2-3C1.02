@@ -4,7 +4,11 @@ import es.uclm.sescam.contratos.informes.EstudioImagenDTO;
 import es.uclm.sescam.contratos.security.AuditLogDTO;
 import es.uclm.sescam.contratos.security.IAuditService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.LocalDate;
 import java.util.Collections;
@@ -12,6 +16,11 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/**
+ * Pruebas de CU-20 (Auditoría de accesos) / CU-25 (Seguridad).
+ * Técnicas: clases de equivalencia sobre el usuario (válido / nulo / vacío / en blanco)
+ * y prueba de integración de la traza entre servicios.
+ */
 class AuditServiceImplTest {
 
     private IAuditService auditService;
@@ -22,24 +31,55 @@ class AuditServiceImplTest {
     }
 
     @Test
-    void testRegistrarEventoExitoso() {
+    @DisplayName("Un evento registrado conserva usuario, acción, resultado e IP")
+    void registrarEventoExitosoConservaTodosSusDatos() {
         auditService.registrarEvento("raul.martinez", "LOGIN", true, "192.168.1.50");
+
         List<AuditLogDTO> trazas = auditService.obtenerTrazas();
 
         assertEquals(1, trazas.size());
-        assertEquals("raul.martinez", trazas.get(0).getUsuario());
-        assertTrue(trazas.get(0).isExito());
+        AuditLogDTO traza = trazas.get(0);
+        assertAll(
+                () -> assertEquals("raul.martinez", traza.getUsuario()),
+                () -> assertEquals("LOGIN", traza.getAccion()),
+                () -> assertTrue(traza.isExito()),
+                () -> assertEquals("192.168.1.50", traza.getIp()),
+                () -> assertNotNull(traza.getTimestamp()));
     }
 
     @Test
-    void testRegistrarEventoUsuarioInvalido() {
-        assertThrows(IllegalArgumentException.class, () -> {
-            auditService.registrarEvento("", "LOGIN", false, "127.0.0.1");
-        });
+    @DisplayName("Un evento fallido queda registrado como no exitoso")
+    void registrarEventoFallidoQuedaComoNoExitoso() {
+        auditService.registrarEvento("intruso", "LOGIN", false, "10.0.0.9");
+
+        assertFalse(auditService.obtenerTrazas().get(0).isExito());
+    }
+
+    @ParameterizedTest(name = "usuario [{0}] no es válido")
+    @NullAndEmptySource
+    @ValueSource(strings = {"   "})
+    @DisplayName("Registrar un evento con usuario nulo, vacío o en blanco lanza excepción y no deja traza")
+    void registrarEventoConUsuarioInvalidoLanzaExcepcion(String usuario) {
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> auditService.registrarEvento(usuario, "LOGIN", false, "127.0.0.1"));
+
+        assertEquals("El usuario no puede estar vacío", e.getMessage());
+        assertTrue(auditService.obtenerTrazas().isEmpty());
     }
 
     @Test
-    void testAuditoriaConectadaEnServicios() {
+    @DisplayName("Las trazas devueltas son una copia: modificarlas no altera el historial")
+    void obtenerTrazasDevuelveUnaCopiaDelHistorial() {
+        auditService.registrarEvento("ana", "LOGIN", true, "127.0.0.1");
+
+        auditService.obtenerTrazas().clear();
+
+        assertEquals(1, auditService.obtenerTrazas().size());
+    }
+
+    @Test
+    @DisplayName("La auditoría registra eventos de login, citas, informes y configuración")
+    void auditoriaRegistraEventosDeLosServiciosConectados() {
         assertEquals(0, auditService.obtenerTrazas().size());
 
         // 1. Login SSO

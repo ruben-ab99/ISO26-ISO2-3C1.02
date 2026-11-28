@@ -7,4 +7,8 @@ public interface ISolicitudPruebaService {
     SolicitudPruebaDTO consultarSolicitud(String solicitudId);
     List<SolicitudPruebaDTO> listarSolicitudesPaciente(String pacienteId);
     SolicitudPruebaDTO cancelarSolicitud(String solicitudId, String motivo);
+
+    default List<SolicitudPruebaDTO> listarSolicitudesMedico(String medicoId) {
+        return List.of();
+    }
 }
